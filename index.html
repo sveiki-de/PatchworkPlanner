@@ -153,8 +153,16 @@ main{max-width:1280px;margin:0 auto;padding:16px}
 .c-mu{background:var(--mu)} .c-k4{background:var(--k4)} .c-v3{background:var(--v3)} .c-none{background:transparent}
 .row .an{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#4a463e}
 .row .an .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:5px;vertical-align:1px}
-.tlegend{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;color:var(--muted);margin:0 0 18px}
+.tlegend{font-size:13px;color:var(--muted);margin:0 0 14px}
+.tleg{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px}
 .tlegend span{display:inline-flex;align-items:center;gap:6px}
+/* Legende einklappbar */
+.legbox{margin:10px 0 4px}
+.legbox summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid var(--line);border-radius:99px;background:var(--card);font-size:13px;font-weight:600;color:var(--muted)}
+.legbox summary::-webkit-details-marker{display:none}
+.legbox summary::before{content:"▸";font-size:11px}
+.legbox[open] summary::before{content:"▾"}
+.legbox .legend{margin:8px 0 4px}
 .tsw{display:inline-block;min-width:30px;height:20px;border-radius:6px;font-size:11px;font-weight:700;color:var(--ink);text-align:center;line-height:20px;padding:0 5px}
 
 /* ---------- Detail ---------- */

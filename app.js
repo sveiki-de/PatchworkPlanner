@@ -55,6 +55,11 @@ const LEGEND = () => ({
                          : [['fr',`frei – Kinder bei ${NM.p1}`],['pf','teilweise frei'],['fe','Schulferien']],
   ius:     [['kid',`Kinder von ${NM.p1} da`],['fr','frei – ohne Kinder'],['mu','Männerurlaub'],['fe','Schulferien']]
 });
+/* Legende einklappbar (Standard: zu); Zustand bleibt beim Blättern erhalten */
+let LEG_OPEN = false;
+const legendBox = inner => `<details class="legbox"${LEG_OPEN ? ' open' : ''}><summary>Legende</summary>${inner}</details>`;
+document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('legbox')){ LEG_OPEN = e.target.open;
+  document.querySelectorAll('.legbox').forEach(x => { if (x !== e.target && x.open !== LEG_OPEN) x.open = LEG_OPEN; }); } }, true);
 const ICONS_HELP = '🎂 Geburtstag · 🚗 Abholen/Bringen · • Termin · rote Zahl = Feiertag';
 
 /* Zeiträume (für die Liste unter dem Monat) */
@@ -168,9 +173,9 @@ function renderMonth(){
       <button id="nextm" aria-label="Nächster Monat" ${MI===MONTHS.length-1?'disabled':''}>›</button></div>
     <div class="wdrow">${WDS.map(w => `<span>${w}</span>`).join('')}</div>
     <div class="mgrid" id="mgrid">${cells}</div>
-    <div class="legend">${LEGEND()[v.view].map(([c,t]) => `<span><i class="sw s-${c}"></i>${t}</span>`).join('')}
+    ${legendBox(`<div class="legend">${LEGEND()[v.view].map(([c,t]) => `<span><i class="sw s-${c}"></i>${t}</span>`).join('')}
       ${v.view==='ius' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')}</span><span><i class="sw" style="background:var(--kS)"></i>${NM.k4} da</span>` : ''}</div>
-    <div class="legend" style="margin-top:0">${ICONS_HELP}</div>
+    <div class="legend" style="margin-top:0">${ICONS_HELP}</div>`)}
     <div class="mlist">
       <h3>${zeitTitel}</h3>
       ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}
@@ -191,7 +196,7 @@ function go(step){ const n = MI + step; if (n < 0 || n >= MONTHS.length) return;
 /* ================= Jahr ================= */
 function renderYear(){
   const v = V, D = v.days;
-  $('year').innerHTML = `<div class="legend" style="margin-top:0">${LEGEND()[v.view].map(([c,t]) => `<span><i class="sw s-${c}"></i>${t}</span>`).join('')}<span>rote Zahl = Feiertag · unterstrichen = Geburtstag</span></div>
+  $('year').innerHTML = `${legendBox(`<div class="legend">${LEGEND()[v.view].map(([c,t]) => `<span><i class="sw s-${c}"></i>${t}</span>`).join('')}<span>rote Zahl = Feiertag · unterstrichen = Geburtstag</span></div>`)}
     <div class="ygrid">${MONTHS.map((g, gi) => {
       const lead = (new Date(g.y, g.m, 1).getDay() + 6) % 7;
       let c = ''; for (let i = 0; i < lead; i++) c += '<span class="yc blank"></span>';
@@ -225,8 +230,8 @@ const TLEGEND = () => ({
   v3: [[NM.k4,'amj',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']]
 });
 function renderTable(v){
-  $('tlegend').innerHTML = TLEGEND()[v.view].map(([t,c,txt]) =>
-    `<span><i class="tsw ${c==='ferien' ? '' : 'c-'+c}" style="${c==='ferien' ? 'background:var(--ferien)' : ''}">${esc(t)}</i>${esc(txt)}</span>`).join('');
+  $('tlegend').innerHTML = legendBox(`<div class="tleg">${TLEGEND()[v.view].map(([t,c,txt]) =>
+    `<span><i class="tsw ${c==='ferien' ? '' : 'c-'+c}" style="${c==='ferien' ? 'background:var(--ferien)' : ''}">${esc(t)}</i>${esc(txt)}</span>`).join('')}</div>`);
   const tmpl = `2.1rem 1.7rem ${'4.1rem '.repeat(COLS()[v.view].length)}1fr`;
   const nowKey = new Date().getFullYear()*12 + new Date().getMonth();
   $('monthnav').innerHTML = MONTHS.map(g =>
