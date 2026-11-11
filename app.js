@@ -944,6 +944,41 @@ function goToday(){
   if (i >= 0){ const c = document.querySelector(`.mc[data-i="${i}"]`); if (c) c.classList.add('flash'); }
 }
 
+/* ================= Neu laden (Knopf ↻ und – als Home-Bildschirm-App – Herunterziehen) ================= */
+const STANDALONE = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+let RELOADING = false;
+async function hardReload(){
+  if (RELOADING) return; RELOADING = true;
+  toast('Lade neuesten Stand …');
+  // Seite und Programmteile am Zwischenspeicher vorbei neu holen, damit auch Änderungen an der Seite selbst ankommen
+  await Promise.all(['./', 'index.html', 'app.js', 'core.js', 'manifest.json'].map(u => fetch(u, { cache:'reload' }).catch(() => null)));
+  location.reload();
+}
+(() => {
+  if (!STANDALONE) return;                              // im Browser gibt es das Herunterziehen schon
+  const ind = $('ptr'), LIMIT = 90;
+  let y0 = null, x0 = 0, dy = 0, dx = 0;
+  const hide = () => { ind.classList.add('hidden'); ind.style.transform = ''; };
+  addEventListener('touchstart', e => {
+    y0 = (window.scrollY <= 0 && e.touches.length === 1 && $('sheet').classList.contains('hidden')) ? e.touches[0].clientY : null;
+    if (y0 !== null){ x0 = e.touches[0].clientX; dy = dx = 0; }
+  }, { passive:true });
+  addEventListener('touchmove', e => {
+    if (y0 === null) return;
+    dy = e.touches[0].clientY - y0; dx = e.touches[0].clientX - x0;
+    if (dy < 15 || Math.abs(dx) > dy || window.scrollY > 0){ hide(); return; }
+    ind.classList.remove('hidden');
+    ind.style.transform = `translate(-50%, ${Math.min(dy, 140) * 0.5 - 20}px)`;
+    ind.textContent = dy > LIMIT ? '↻ Loslassen zum Aktualisieren' : '↓ Zum Aktualisieren ziehen';
+  }, { passive:true });
+  addEventListener('touchend', () => {
+    if (y0 === null) return;
+    const go = dy > LIMIT && Math.abs(dx) < dy && window.scrollY <= 0;
+    y0 = null;
+    if (go){ ind.textContent = 'Lade neu …'; hardReload(); } else hide();
+  }, { passive:true });
+})();
+
 /* ================= Rahmen ================= */
 let V = null, ROOT = null, TAB = 'month';
 function setTab(t){
@@ -1015,6 +1050,7 @@ document.addEventListener('click', e => {
 $('pdfbtn').onclick = downloadPdf;
 $('calbtn').onclick = () => openCal();
 $('todaybtn').onclick = goToday;
+$('reloadbtn').onclick = hardReload;
 $('showpin').onclick = () => { const p = $('pin'); p.type = p.type === 'password' ? 'text' : 'password'; p.focus(); };
 $('editbtn').onclick = () => { EDIT = !EDIT; SEL = null; SELSTEP = 0; if (EDIT) setTab('month'); render(ROOT, true); };
 $('logout').onclick = () => { store.del(); V = null; ROOT = null; EDIT = false; $('editbar').classList.add('hidden'); document.body.classList.remove('withbar'); ['grid','month','year','newsbox'].forEach(x => $(x).innerHTML = ''); $('pin').value = '';
@@ -1061,8 +1097,7 @@ $('lockform').addEventListener('submit', async e => {
   $('lockmsg').style.color = 'var(--muted)'; $('lockmsg').textContent = 'Lade Daten …'; $('go').disabled = true;
   try { VAULT = await loadVault(); $('lockmsg').textContent = ''; $('go').disabled = false; }
   catch(e){ $('lockmsg').style.color = ''; $('lockmsg').textContent = 'Daten konnten nicht geladen werden und auf diesem Gerät ist noch kein Stand gespeichert. Bitte Internetverbindung prüfen und neu laden.'; return; }
-  const standalone = (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-  if (standalone) $('remember').checked = true;                    // als App auf dem Home-Bildschirm: Anmeldung merken
+  if (STANDALONE) $('remember').checked = true;                    // als App auf dem Home-Bildschirm: Anmeldung merken
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch(e){}
   const saved = store.get();
   if (saved){

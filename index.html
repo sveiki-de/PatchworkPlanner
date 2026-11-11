@@ -156,6 +156,9 @@ main{max-width:1280px;margin:0 auto;padding:16px}
 .tlegend{font-size:13px;color:var(--muted);margin:0 0 14px}
 .tleg{display:flex;flex-wrap:wrap;gap:8px 14px;margin-top:8px}
 .tlegend span{display:inline-flex;align-items:center;gap:6px}
+/* Neu laden */
+#reloadbtn{font-size:16px;line-height:1;padding:6px 11px}
+#ptr{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 6px);transform:translate(-50%,-60px);z-index:40;background:var(--ink);color:#fff;border-radius:99px;padding:8px 16px;font-size:14px;font-weight:600;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.2);pointer-events:none}
 /* Legende einklappbar */
 .legbox{margin:10px 0 4px}
 .legbox summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid var(--line);border-radius:99px;background:var(--card);font-size:13px;font-weight:600;color:var(--muted)}
@@ -247,6 +250,7 @@ footer{max-width:1280px;margin:0 auto;padding:10px 16px 40px;color:var(--muted);
     <div class="row2">
       <div class="seg" id="tabs"><button data-tab="month" class="on">Monat</button><button data-tab="year">Jahr</button><button data-tab="table">Tabelle</button></div>
       <button class="btn" id="todaybtn" title="Zum heutigen Tag springen">Heute</button>
+      <button class="btn" id="reloadbtn" title="Neu laden – holt den neuesten Stand" aria-label="Neu laden">↻</button>
       <div class="seg hidden" id="modeseg"></div>
       <div class="switch hidden" id="switch"></div>
     </div>
@@ -265,6 +269,7 @@ footer{max-width:1280px;margin:0 auto;padding:10px 16px 40px;color:var(--muted);
   </main>
 </section>
 
+<div id="ptr" class="hidden"></div>
 <div id="toast" class="hidden"></div>
 <div id="editbar" class="hidden"><div class="in" id="editbarin"></div></div>
 <div id="sheet" class="hidden" role="dialog" aria-modal="true"><div class="sheetcard" id="sheetcard"></div></div>
