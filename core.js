@@ -25,6 +25,7 @@
       if (!/^\d\d\.\d\d\.\d{4}$/.test(r.d)) err.push(`Zeile ${i + 1}: Datum „${r.d}“ ungültig`);
       if (!/^[ID]{3}$/.test(r.k)) err.push(`${r.d}: AMJ „${r.k}“ ungültig`);
       if (!/^[IM]$/.test(r.s)) err.push(`${r.d}: Kind 4 „${r.s}“ ungültig`);
+      if (r.x && r.x !== 'V') err.push(`${r.d}: Übergabe „${r.x}“ ungültig`);
       const dt = parseDate(r.d);
       if (prev && dt - prev !== 864e5) err.push(`${r.d}: Lücke oder doppelter Tag`);
       prev = dt;
@@ -36,7 +37,7 @@
   /* Drei Ansichten aus den Stammdaten ableiten */
   function deriveViews(master) {
     const N = master.names, P = master.places || {};
-    const list = master.rows.map(r => ({ date: parseDate(r.d), f: !!r.f, amj: r.k, k4: r.s, anlass: r.a || '', kommentar: r.c || '' }));
+    const list = master.rows.map(r => ({ date: parseDate(r.d), f: !!r.f, amj: r.k, k4: r.s, anlass: r.a || '', kommentar: r.c || '', x: r.x || '' }));
     const isFeiertag = d => parts(d.anlass).some(x => FEIERTAGE.includes(x));
     const kidBirthdays = N.kids.map(k => `${k} Geburtstag`);
 
@@ -69,7 +70,8 @@
         if (arr.length) {
           // reines Kinder-WE (nur Sa+So bei Sven, Mo wieder bei Daniela): Abholen am Freitag, auch in den Ferien
           const pureWE = list[i + 1] && list[i + 2] && wdOf(list[i + 1]) === 'So' && arr.every(j => list[i + 1].amj[j] === 'I' && list[i + 2].amj[j] === 'D');
-          if (wdOf(d) === 'Sa' && wdOf(p) === 'Fr' && ((!d.f && !p.f) || pureWE)) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
+          if (d.x === 'V') addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);   // Ausnahme: Abholung am Vorabend
+          else if (wdOf(d) === 'Sa' && wdOf(p) === 'Fr' && ((!d.f && !p.f) || pureWE)) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
           else addAMJ(i, '', v => `${kidsTxt(arr, v)} ${arr.length > 1 ? 'kommen' : 'kommt'} zu ${N.p1} (Zeit nach Absprache)`);
         }
       }
