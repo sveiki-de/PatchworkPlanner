@@ -25,7 +25,7 @@
       if (!/^\d\d\.\d\d\.\d{4}$/.test(r.d)) err.push(`Zeile ${i + 1}: Datum „${r.d}“ ungültig`);
       if (!/^[ID]{3}$/.test(r.k)) err.push(`${r.d}: AMJ „${r.k}“ ungültig`);
       if (!/^[IM]$/.test(r.s)) err.push(`${r.d}: Kind 4 „${r.s}“ ungültig`);
-      if (r.x && r.x !== 'V') err.push(`${r.d}: Übergabe „${r.x}“ ungültig`);
+      if (r.x && !/^(V|A|B|VB|AB)$/.test(r.x)) err.push(`${r.d}: Übergabe „${r.x}“ ungültig`);
       const dt = parseDate(r.d);
       if (prev && dt - prev !== 864e5) err.push(`${r.d}: Lücke oder doppelter Tag`);
       prev = dt;
@@ -70,7 +70,9 @@
         if (arr.length) {
           // reines Kinder-WE (nur Sa+So bei Sven, Mo wieder bei Daniela): Abholen am Freitag, auch in den Ferien
           const pureWE = list[i + 1] && list[i + 2] && wdOf(list[i + 1]) === 'So' && arr.every(j => list[i + 1].amj[j] === 'I' && list[i + 2].amj[j] === 'D');
-          if (d.x === 'V') addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);   // Ausnahme: Abholung am Vorabend
+          // Ausnahmen (Feld x): V = Abholung am Vorabend, A = Sven holt am Tag selbst ab (Zeit nach Absprache)
+          if (d.x.includes('V')) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
+          else if (d.x.includes('A')) addAMJ(i, '', v => `${N.p1} holt ${kidsTxt(arr, v)} ab (Zeit nach Absprache)`);
           else if (wdOf(d) === 'Sa' && wdOf(p) === 'Fr' && ((!d.f && !p.f) || pureWE)) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
           else addAMJ(i, '', v => `${kidsTxt(arr, v)} ${arr.length > 1 ? 'kommen' : 'kommt'} zu ${N.p1} (Zeit nach Absprache)`);
         }
@@ -78,7 +80,8 @@
       if (nx) {
         const dep = [0, 1, 2].filter(j => d.amj[j] === 'I' && nx.amj[j] === 'D');
         if (dep.length) {
-          if (wdOf(d) === 'So' && !d.f && !nx.f) addAMJ(i, '17:00', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück`);
+          if (d.x.includes('B')) addAMJ(i, '', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück (Zeit nach Absprache)`);   // Ausnahme B: Sven bringt zurück
+          else if (wdOf(d) === 'So' && !d.f && !nx.f) addAMJ(i, '17:00', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück`);
           else addAMJ(i, '', v => `${kidsTxt(dep, v)} zurück zu ${v === 'v2' ? 'dir' : N.p2} (Zeit nach Absprache)`);
         }
         // Freitags-Besuche werden bewusst nicht mehr eingetragen (Entscheidung 10.11.2026).
