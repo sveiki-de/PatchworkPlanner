@@ -67,7 +67,9 @@
       if (p) {
         const arr = [0, 1, 2].filter(j => d.amj[j] === 'I' && p.amj[j] === 'D');
         if (arr.length) {
-          if (wdOf(d) === 'Sa' && wdOf(p) === 'Fr' && !d.f && !p.f) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
+          // reines Kinder-WE (nur Sa+So bei Sven, Mo wieder bei Daniela): Abholen am Freitag, auch in den Ferien
+          const pureWE = list[i + 1] && list[i + 2] && wdOf(list[i + 1]) === 'So' && arr.every(j => list[i + 1].amj[j] === 'I' && list[i + 2].amj[j] === 'D');
+          if (wdOf(d) === 'Sa' && wdOf(p) === 'Fr' && ((!d.f && !p.f) || pureWE)) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
           else addAMJ(i, '', v => `${kidsTxt(arr, v)} ${arr.length > 1 ? 'kommen' : 'kommt'} zu ${N.p1} (Zeit nach Absprache)`);
         }
       }
