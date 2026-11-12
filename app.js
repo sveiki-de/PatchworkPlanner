@@ -392,11 +392,53 @@ function buildPdf(v){
   });
   return pdfBytes(pages, W, H);
 }
-/* PDF einer bestimmten Ansicht (mit deren Standard-Hervorhebung, wenn nicht die eigene) */
-function pdfFile(v){
+/* Jahresplan Jan–Dez auf einer Seite (A4 quer): nur Farben und Buchstaben, keine Anlässe */
+function buildYearPdf(v){
+  const W = 842, H = 595, M = 20, top = 44, headH = 14, legendH = 22, D = v.days;
+  const ms = MONTHS.filter(g => g.y === PLANYEAR);
+  const gap = 3, bw = (W - 2*M - gap*11) / 12, rowH = (H - top - headH - legendH - M) / 31;
+  const cols = pdfCols(v.view), sum = cols.reduce((t, c) => t + c[0], 0);
+  const p = pdfCanvas(H);
+  p.text(M, 28, `Kinderplanung ${PLANYEAR} – ${v.label}`, 14, { bold:true });
+  p.text(W - M, 28, `Stand ${v.stand}`, 8.5, { align:'right', color:PC.grey });
+  ms.forEach((g, mi) => {
+    const x0 = M + mi * (bw + gap), rows = g.to - g.from + 1;
+    p.rect(x0, top, bw, headH, PC.ink);
+    p.text(x0 + bw/2, top + 9.8, MONATE[g.m], 7.5, { bold:true, align:'center', color:PC.white });
+    const cx0 = x0 + 21.5, avail = bw - 22.5 - 1.5 * (cols.length - 1);
+    for (let i = g.from; i <= g.to; i++){
+      const d = D[i], y = top + headH + (i - g.from) * rowH, base = y + rowH * 0.68;
+      if (isWE(d)) p.rect(x0, y, bw, rowH, PC.we);
+      if (d.f) p.rect(x0 + 1, y + 0.8, 10.5, rowH - 1.6, PC.fe);
+      p.text(x0 + 10.5, base, parseInt(d.d), 6.3, { bold:true, align:'right', color: d.h ? PC.red : PC.ink });
+      p.text(x0 + 12, base, d.w, 5.2, { color:PC.grey });
+      let cx = cx0;
+      for (const [w, fn] of cols){
+        const cw = w / sum * avail, [t, fill] = fn(d);
+        if (fill) p.rect(cx, y + 0.8, cw, rowH - 1.6, fill);
+        if (t) p.text(cx + cw/2, base, t, 5.8, { bold:true, align:'center', maxW: cw - 1 });
+        cx += cw + 1.5;
+      }
+      if (i < g.to) p.rect(x0, y + rowH - 0.25, bw, 0.25, PC.line);
+    }
+    p.rect(x0, top, bw, headH + rows * rowH, null, PC.line);
+  });
+  let lx = M; const ly = H - M - 6;
+  const items = [...pdfLegend(v.view), [PC.fe, 'Schulferien'], [PC.we, 'Wochenende']];
+  for (const [col, txt] of items){ p.rect(lx, ly - 7, 10, 9, col, PC.line); p.text(lx + 13, ly, txt, 7, { color:PC.grey }); lx += 13 + textW(txt, 7) + 14; }
+  p.text(lx, ly, 'Rote Zahl = Feiertag', 7, { color:PC.red });
+  return pdfBytes([p.ops], W, H);
+}
+/* PDF einer bestimmten Ansicht (mit deren Standard-Hervorhebung, wenn nicht die eigene); kind: 'full' (2 Seiten) oder 'year' (1 Seite) */
+const PDFKIND_KEY = 'kinderplanung_pdfart';
+let PDF_KIND = (() => { const k = store.get(PDFKIND_KEY); return k === 'year' ? 'year' : 'full'; })();
+function pdfFile(v, kind = 'full'){
   const keep = MODE;
   if (v !== V && MODE_DEFAULT[v.view]) MODE = MODE_DEFAULT[v.view];
-  try { return new File([buildPdf(v)], `Kinderplanung_${v.label.replace(/[^A-Za-z0-9]+/g, '_')}.pdf`, { type:'application/pdf' }); }
+  try {
+    const bytes = kind === 'year' ? buildYearPdf(v) : buildPdf(v);
+    return new File([bytes], `Kinderplanung_${v.label.replace(/[^A-Za-z0-9]+/g, '_')}${kind === 'year' ? '_' + PLANYEAR + '_Jahr' : ''}.pdf`, { type:'application/pdf' });
+  }
   finally { MODE = keep; }
 }
 function saveFile(file){
@@ -405,8 +447,8 @@ function saveFile(file){
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
-async function sharePdf(v){
-  const file = pdfFile(v);
+async function sharePdf(v, kind = 'full'){
+  const file = pdfFile(v, kind);
   const text = `Hallo ${v.label}, anbei der aktuelle Stand der Kinderplanung (Stand ${v.stand}).`;
   if (navigator.canShare && navigator.canShare({ files: [file] })){
     try { await navigator.share({ files: [file], title: 'Kinderplanung', text }); return; }
@@ -419,21 +461,31 @@ async function sharePdf(v){
 }
 function downloadPdf(){
   if (!V) return;
-  if (!(V === ROOT && ROOT.others)) { saveFile(pdfFile(V)); return; }
-  const draftNote = CHG.size ? '<p class="small" style="color:#a35400">Hinweis: Die PDFs enthalten nur den veröffentlichten Stand, nicht euren offenen Entwurf.</p>' : '';
-  const pub = PUB ? PlannerCore.deriveViews(PUB) : { ius: ROOT, v2: ROOT.others.v2, v3: ROOT.others.v3 };   // nie den Entwurf verschicken
-  const who = [['ius', pub.ius, NM.ius], ['v2', pub.v2, NM.p2], ['v3', pub.v3, NM.v3]];
-  $('sheetcard').innerHTML = `<h3>PDF</h3><div class="sub">Zweiseitiger Jahresplan zum Drucken oder Verschicken – jeweils nur mit dem, was die Person sehen soll.</div>
+  const isRoot = V === ROOT && ROOT.others;
+  const draftNote = isRoot && CHG.size ? '<p class="small" style="color:#a35400">Hinweis: Die PDFs enthalten nur den veröffentlichten Stand, nicht euren offenen Entwurf.</p>' : '';
+  let who;
+  if (isRoot){
+    const pub = PUB ? PlannerCore.deriveViews(PUB) : { ius: ROOT, v2: ROOT.others.v2, v3: ROOT.others.v3 };   // nie den Entwurf verschicken
+    who = [['ius', pub.ius, NM.ius], ['v2', pub.v2, NM.p2], ['v3', pub.v3, NM.v3]];
+  } else who = [[V.view, V, V.label]];
+  const info = { full: 'Alle Monate mit Anlässen, je Halbjahr eine Seite.', year: `Januar bis Dezember ${PLANYEAR} auf einer Seite – nur Farben und Buchstaben, ohne Anlässe. Am besten farbig drucken.` };
+  $('sheetcard').innerHTML = `<h3>PDF</h3><div class="sub">Zum Drucken oder Verschicken${isRoot ? ' – jeweils nur mit dem, was die Person sehen soll' : ''}.</div>
+    <div class="seg" id="pdfkind"><button data-kind="full">Ausführlich (mit Anlässen)</button><button data-kind="year">Jahr auf 1 Seite</button></div>
+    <p class="small" id="pdfinfo"></p>
     ${who.map(([k, v, n]) => `<div class="pdfrow"><b>${esc(n)}</b><span>
-      <button class="btn" data-pdf="${k}" data-how="dl">Herunterladen</button>
-      ${k !== 'ius' ? `<button class="btn pri" data-pdf="${k}" data-how="share">Per Mail / WhatsApp senden</button>` : ''}</span></div>`).join('')}
+      <button class="btn${isRoot ? '' : ' pri'}" data-pdf="${k}" data-how="dl">Herunterladen</button>
+      ${isRoot && k !== 'ius' ? `<button class="btn pri" data-pdf="${k}" data-how="share">Per Mail / WhatsApp senden</button>` : ''}</span></div>`).join('')}
     ${draftNote}
-    <p class="small">„Senden“ öffnet am Handy das Teilen-Menü (Mail, WhatsApp …) mit dem PDF als Anhang. Am Computer wird das PDF gespeichert und das Mailprogramm geöffnet – dort das PDF anhängen.</p>
+    ${isRoot ? '<p class="small">„Senden“ öffnet am Handy das Teilen-Menü (Mail, WhatsApp …) mit dem PDF als Anhang. Am Computer wird das PDF gespeichert und das Mailprogramm geöffnet – dort das PDF anhängen.</p>' : ''}
     <button id="closesheet">Schließen</button>`;
   $('sheet').classList.remove('hidden'); $('closesheet').onclick = closeDetail;
+  const setKind = k => { PDF_KIND = k; store.set(k, PDFKIND_KEY);
+    $('pdfkind').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.kind === k)); $('pdfinfo').textContent = info[k]; };
+  $('pdfkind').querySelectorAll('button').forEach(b => b.onclick = () => setKind(b.dataset.kind));
+  setKind(PDF_KIND);
   $('sheetcard').querySelectorAll('[data-pdf]').forEach(b => b.onclick = () => {
     const v = who.find(w => w[0] === b.dataset.pdf)[1];
-    if (b.dataset.how === 'share') sharePdf(v); else saveFile(pdfFile(v));
+    if (b.dataset.how === 'share') sharePdf(v, PDF_KIND); else saveFile(pdfFile(v, PDF_KIND));
   });
 }
 
