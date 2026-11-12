@@ -8,7 +8,7 @@
     'Christi Himmelfahrt', 'Pfingsten', 'Pfingstmontag', 'Fronleichnam', 'Mariä Himmelfahrt', 'Tag der Dt. Einheit',
     'Allerheiligen', '1. Weihnachtstag', '2. Weihnachtstag'];
   const ALLGEMEIN = ['Rosenmontag', 'Muttertag', 'Halloween', 'Buß- und Bettag', '1. Advent', 'Heiligabend', 'Silvester'];
-  const VIEWS = ['ius', 'v2', 'v3'];
+  const VIEWS = ['ius', 'v2', 'v3', 'v4'];
 
   const parts = s => s ? String(s).split(' · ').map(x => x.trim()).filter(Boolean) : [];
   const parseDate = s => { const [d, m, y] = s.split('.').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
@@ -30,7 +30,7 @@
       if (prev && dt - prev !== 864e5) err.push(`${r.d}: Lücke oder doppelter Tag`);
       prev = dt;
     });
-    (master.changes || []).forEach((c, i) => { if (!/^[IDM]+$/.test(c.wer || '') || !c.text) err.push(`Änderung ${i + 1} ungültig`); });
+    (master.changes || []).forEach((c, i) => { if (!/^[IDML]+$/.test(c.wer || '') || !c.text) err.push(`Änderung ${i + 1} ungültig`); });
     return err;
   }
 
@@ -54,6 +54,13 @@
       if (x === 'Ostern (AMJ ab Mittag)') return 'Ostern';
       if (x === `${N.v3} Geburtstag`) return 'Dein Geburtstag';
       if (FEIERTAGE.includes(x) || ALLGEMEIN.includes(x) || x === 'Fasching' || x === `${N.k4} Geburtstag` || (N.k5 && x === `${N.k5} Geburtstag`)) return x;
+      return null;
+    };
+    const filterL = x => {                                                // v4: Feiertage, allgemeine Tage, Geburtstage der Kinder
+      if (x === 'Fasching/Ball') return 'Fasching';
+      if (x === 'Ostern (AMJ ab Mittag)') return 'Ostern';
+      if (N.k5 && x === `${N.k5} Geburtstag`) return 'Dein Geburtstag';
+      if (FEIERTAGE.includes(x) || ALLGEMEIN.includes(x) || x === 'Fasching' || kidBirthdays.includes(x) || x === `${N.k4} Geburtstag`) return x;
       return null;
     };
     const changesFor = c => (master.changes || []).filter(x => x.wer.includes(c)).map(({ d, iso, text }) => ({ d, iso, text }));
@@ -106,9 +113,10 @@
     const withEv = (view, i, o) => ev[view][i].length ? { ...o, u: ev[view][i] } : o;
     const base = d => ({ d: fmt(d.date), w: WT[d.date.getUTCDay()], kw: isoWeek(d.date), f: d.f ? 1 : 0, h: isFeiertag(d) ? 1 : 0 });
     // N1: jede Ansicht bekommt nur die Namen, die sie für die Anzeige braucht
-    const names = { kids: N.kids, k4: N.k4, p1: N.p1, ius: N.ius, p2: N.p2, v3: N.v3 };
+    const names = { kids: N.kids, k4: N.k4, p1: N.p1, ius: N.ius, p2: N.p2, v3: N.v3, k5: N.k5 };
     const namesV2 = { kids: N.kids, p1: N.p1, p2: N.p2 };
     const namesV3 = { k4: N.k4, p1: N.p1, ius: N.ius, v3: N.v3 };
+    const namesV4 = { kids: N.kids, k4: N.k4, p1: N.p1, ius: N.ius, p2: N.p2, v3: N.v3, k5: N.k5 };
     const views = {
       ius: { view: 'ius', label: N.ius, stand: master.stand, names, changes: changesFor('I'),
         days: list.map((d, i) => withEv('ius', i, { ...base(d), k: d.amj, s: d.k4, a: d.anlass, c: d.kommentar })) },
@@ -116,14 +124,18 @@
         days: list.map((d, i) => withEv('v2', i, { ...base(d), k: d.amj, a: parts(d.anlass).map(filterD).filter(Boolean).join(' · ') })) },
       v3: { view: 'v3', label: N.v3, stand: master.stand, names: namesV3, changes: changesFor('M'),
         days: list.map((d, i) => withEv('v3', i, { ...base(d), s: d.k4, a: parts(d.anlass).map(filterM).filter(Boolean).join(' · ') })) },
+      // v4: nur Anwesenheiten aller Kinder, ohne Übergaben, Notizen, Orte, Kontakt
+      v4: { view: 'v4', label: N.k5 || 'Ansicht 4', stand: master.stand, names: namesV4, changes: changesFor('L'),
+        days: list.map(d => ({ ...base(d), k: d.amj, s: d.k4, a: parts(d.anlass).map(filterL).filter(Boolean).join(' · ') })) },
     };
     const F = master.feeds || {};                                         // geheime Kalender-Links je Ansicht
     if (F.v2 && F.v2.raw) views.v2.calUrl = F.v2.raw;
     if (F.v3 && F.v3.raw) views.v3.calUrl = F.v3.raw;
+    if (F.v4 && F.v4.raw) views.v4.calUrl = F.v4.raw;
     if (master.contact && master.contact.whatsapp) {                 // für „Änderung anfragen“ per WhatsApp
       views.v2.contact = views.v3.contact = { wa: master.contact.whatsapp, to: N.p1 };
     }
-    views.ius.others = { v2: views.v2, v3: views.v3 };
+    views.ius.others = { v2: views.v2, v3: views.v3, v4: views.v4 };
     return views;
   }
 
@@ -196,6 +208,9 @@
     } else if (v.view === 'v2') {
       runs(d => bei(d, 'I').length === 3, () => `Kinder bei ${N.p1}`, 'weg');
       runs(d => { const n = bei(d, 'I').length; return n > 0 && n < 3; }, d => `${bei(d, 'I').join(' & ')} bei ${N.p1}`, 'teil');
+    } else if (v.view === 'v4') {
+      runs(d => bei(d, 'I').length > 0, d => (bei(d, 'I').length === 3 ? N.kids.join(', ') : bei(d, 'I').join(' & ')) + ` bei ${N.ius}`, 'da');
+      runs(d => d.s === 'M', () => `${N.k4} bei ${N.v3}`, 'weg');
     } else {
       runs(d => d.s === 'M', () => `${N.k4} bei dir`, 'da');
     }
