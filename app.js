@@ -46,6 +46,7 @@ function dayClass(view, d){
     return s === 3 ? 'fr' : s ? 'pf' : '';
   }
   if (view === 'v4') return bei(d,'I').length ? 'kid' : '';
+  if (view === 'v5') return d.s === 'M' ? 'on' : '';
   if (/Männerurlaub/.test(d.a) && !bei(d,'I').length) return 'mu';
   if (iusFree(d)) return 'fr';
   return bei(d,'I').length ? 'kid' : '';
@@ -55,7 +56,8 @@ const LEGEND = () => ({
   v2: MODE === 'da' ? [['on','Kinder bei dir'],['kid','einzelne Kinder bei dir'],['fe','Schulferien']]
                          : [['fr',`frei – Kinder bei ${NM.p1}`],['pf','teilweise frei'],['fe','Schulferien']],
   ius:     [['kid',`Kinder von ${NM.p1} da`],['fr','frei – ohne Kinder'],['mu','Männerurlaub'],['fe','Schulferien']],
-  v4:      [['kid',`Kinder von ${NM.p1} bei ${NM.ius}`],['fe','Schulferien']]
+  v4:      [['kid',`Kinder von ${NM.p1} bei ${NM.ius}`],['fe','Schulferien']],
+  v5:      [['on',`du bist bei ${NM.v3}`],['fe','Schulferien']]
 });
 /* Legende einklappbar (Standard: zu); Zustand bleibt beim Blättern erhalten */
 let LEG_OPEN = false;
@@ -85,6 +87,9 @@ function buildRuns(v){
   } else if (v.view === 'v2'){
     add(d => bei(d,'I').length === 3, () => `frei – Kinder bei ${NM.p1}`, 'fr');
     add(d => { const n = bei(d,'I').length; return n > 0 && n < 3; }, d => `${nameList(bei(d,'I'))} bei ${NM.p1}, ${nameList(bei(d,'D'))} bei dir`, 'pf');
+  } else if (v.view === 'v5'){
+    add(d => d.s === 'M', () => `Du bist bei ${NM.v3}`, 'on');
+    add(d => bei(d,'I').length > 0, d => nameList(bei(d,'I')) + ' da', 'kid');
   } else if (v.view === 'v4'){
     add(d => bei(d,'I').length > 0, d => nameList(bei(d,'I')) + ` bei ${NM.ius}`, 'kid');
     add(d => d.s === 'M', () => `${NM.k4} bei ${NM.v3}`, 'v3');
@@ -158,7 +163,7 @@ function renderMonth(){
     const idx = g.from + day - 1;
     const d = D[idx], cls = dayClass(v.view, d);
     let ks = '';
-    if (v.view === 'ius' || v.view === 'v4') ks = `<span class="ks">${[0,1,2].map(i => `<b class="${d.k[i]==='I'?'a':'x'}">${KINDER[i][0]}</b>`).join('')}<b class="${d.s==='I'?'s':'x'}">S</b></span>`;
+    if (v.view === 'ius' || v.view === 'v4' || v.view === 'v5') ks = `<span class="ks">${[0,1,2].map(i => `<b class="${d.k[i]==='I'?'a':'x'}">${KINDER[i][0]}</b>`).join('')}${v.view === 'v5' ? '' : `<b class="${d.s==='I'?'s':'x'}">S</b>`}</span>`;
     cells += `<div class="mc ${cls} ${d.f?'fe':''} ${d.h?'fei':''} ${d.d===todayStr?'today':''} ${editMark(idx)}" data-i="${idx}" title="${esc(d.a)}">
       <span class="n">${day}</span><span class="ic">${icons(d)}</span>${ks}</div>`;
   }
@@ -171,7 +176,7 @@ function renderMonth(){
   }
   terms.sort((a,b) => a.from - b.from);
   const zeitTitel = v.view === 'v3' ? (MODE === 'frei' ? 'Deine freien Tage' : `${NM.k4} bei dir`)
-    : v.view === 'v2' ? (MODE === 'da' ? 'Kinder bei dir' : 'Deine freien Tage') : v.view === 'v4' ? 'Wer ist wann wo' : 'Wer ist wann da';
+    : v.view === 'v2' ? (MODE === 'da' ? 'Kinder bei dir' : 'Deine freien Tage') : v.view === 'v4' ? 'Wer ist wann wo' : v.view === 'v5' ? 'Wo bist du wann' : 'Wer ist wann da';
   $('month').innerHTML = `
     <div class="mhead"><button id="prevm" aria-label="Vorheriger Monat" ${MI===0?'disabled':''}>‹</button>
       <h2>${MONATE[g.m]} ${g.y}</h2>
@@ -179,12 +184,13 @@ function renderMonth(){
     <div class="wdrow">${WDS.map(w => `<span>${w}</span>`).join('')}</div>
     <div class="mgrid" id="mgrid">${cells}</div>
     ${legendBox(`<div class="legend">${LEGEND()[v.view].map(([c,t]) => `<span><i class="sw s-${c}"></i>${t}</span>`).join('')}
-      ${v.view==='ius' || v.view==='v4' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')}</span><span><i class="sw" style="background:var(--kS)"></i>${NM.k4} da</span>` : ''}</div>
+      ${v.view==='ius' || v.view==='v4' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')}</span><span><i class="sw" style="background:var(--kS)"></i>${NM.k4} da</span>` : ''}
+      ${v.view==='v5' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')} = da</span>` : ''}</div>
     <div class="legend" style="margin-top:0">${ICONS_HELP}</div>`)}
     <div class="mlist">
       <h3>${zeitTitel}</h3>
       ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}
-      ${v.view === 'ius' || v.view === 'v3' || evs.length ? `<h3>Abholen & Bringen</h3>
+      ${v.view === 'ius' || v.view === 'v3' || v.view === 'v5' || evs.length ? `<h3>${v.view === 'v5' ? 'Deine Fahrten' : 'Abholen & Bringen'}</h3>
       ${evs.length ? evs.map(([i,u]) => `<div class="li"><span><b>${D[i].w} ${kd(D[i])}</b>${u[0] ? ` <span class="t">${esc(u[0])}</span>` : ''} · ${esc(u[1])}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}` : ''}
       <h3>Termine & Feiertage</h3>
       ${terms.length ? terms.map(r => `<div class="li"><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">Keine.</div>'}
@@ -228,13 +234,16 @@ const COLS = () => ({
   v2: [ { head:'Kinder', cell(d){ if (d.k === 'DDD') return ['AMJ','amj']; const b = bei(d,'D'); return b.length ? [kurz(b), 'part'] : ['', 'none']; } } ],
   v3: [ { head:NM.k4, cell: d => d.s === 'M' ? [NM.k4,'amj'] : ['', 'none'] } ],
   v4: [ { head:'AMJ', cell(d){ const b = bei(d,'I'); return b.length === 3 ? ['AMJ','amj'] : b.length ? [kurz(b), 'part'] : ['', 'none']; } },
-        { head:NM.k4, cell: d => d.s === 'I' ? [NM.k4[0],'k4'] : [NM.v3[0],'v3'] } ]
+        { head:NM.k4, cell: d => d.s === 'I' ? [NM.k4[0],'k4'] : [NM.v3[0],'v3'] } ],
+  v5: [ { head:'Du', cell: d => d.s === 'M' ? [NM.v3,'amj'] : ['', 'none'] },
+        { head:'AMJ', cell(d){ const b = bei(d,'I'); return b.length === 3 ? ['AMJ','part'] : b.length ? [kurz(b), 'part'] : ['', 'none']; } } ]
 });
 const TLEGEND = () => ({
   ius: [['AMJ','amj','alle drei bei uns'],[KINDER[2],'part','nur einzelne Kinder'],['IuS','ius',`${NM.ius} ohne Kinder`],
         ['','mu',`Männerurlaub ${NM.p1}`],['IuS','k4',`${NM.k4} bei uns`],[NM.v3[0],'v3',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']],
   v2: [['AMJ','amj',`${KINDER.join(', ')} bei ${NM.p2}`],[KINDER[2],'part','nur einzelne Kinder'],['','ferien','Schulferien']],
   v3: [[NM.k4,'amj',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']],
+  v5: [[NM.v3,'amj',`du bist bei ${NM.v3}`],['AMJ','part',`${KINDER.join(', ')} da`],['','ferien','Schulferien']],
   v4: [['AMJ','amj',`alle drei bei ${NM.ius}`],[KINDER[2],'part','nur einzelne Kinder'],[NM.k4[0],'k4',`${NM.k4} bei ${NM.ius}`],[NM.v3[0],'v3',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']]
 });
 function renderTable(v){
@@ -261,6 +270,7 @@ function renderTable(v){
 function detailRows(v, d){
   if (v.view === 'ius') return [...KINDER.map((n,i) => [n, d.k[i] === 'I' ? 'bei uns' : `bei ${NM.p2}`]), [NM.k4, d.s === 'I' ? 'bei uns' : `bei ${NM.v3}`]];
   if (v.view === 'v2') return KINDER.map((n,i) => [n, d.k[i] === 'D' ? 'bei dir' : `bei ${NM.p1}`]);
+  if (v.view === 'v5') return [['Du', d.s === 'M' ? `bei ${NM.v3}` : `bei ${NM.ius}`], ...KINDER.map((n,i) => [n, d.k[i] === 'I' ? 'da' : `bei ${NM.p2}`])];
   if (v.view === 'v4') return [...KINDER.map((n,i) => [n, d.k[i] === 'I' ? `bei ${NM.ius}` : `bei ${NM.p2}`]), [NM.k4, d.s === 'I' ? `bei ${NM.ius}` : `bei ${NM.v3}`]];
   return [[NM.k4, d.s === 'M' ? 'bei dir' : `bei ${NM.ius}`]];
 }
@@ -683,7 +693,8 @@ function openPublishSheet(){
       <div class="who2"><label><input type="checkbox" checked disabled> ${esc(NM.ius)}</label>
         <label><input type="checkbox" id="d_${id}" ${d ? 'checked' : ''}> ${esc(NM.p2)}</label>
         <label><input type="checkbox" id="m_${id}" ${m ? 'checked' : ''}> ${esc(NM.v3)}</label>
-        ${NM.k5 ? `<label><input type="checkbox" id="l_${id}" ${l ? 'checked' : ''}> ${esc(NM.k5)}</label>` : ''}</div>
+        ${NM.k5 ? `<label><input type="checkbox" id="l_${id}" ${l ? 'checked' : ''}> ${esc(NM.k5)}</label>` : ''}
+        <label><input type="checkbox" id="s_${id}" ${l ? 'checked' : ''}> ${esc(NM.k4)}</label></div>
       ${hint ? `<p class="small">${hint}</p>` : ''}</div>`;
   $('sheetcard').innerHTML = `<h3>Veröffentlichen</h3><div class="sub">Das ändert sich – danach sehen es alle nach etwa einer Minute.</div>
     ${block('amj', 'Kinder von ' + NM.p1, c.amj, true, false, true, '')}
@@ -692,8 +703,8 @@ function openPublishSheet(){
     <div class="sheetbtns"><button class="btn pri" id="dopub">Jetzt veröffentlichen</button><button class="btn" data-act="close">Abbrechen</button></div>
     <div class="msg" id="pubmsg"></div>`;
   $('sheet').classList.remove('hidden');
-  ['d_other', 'm_other', 'l_other'].forEach(id => $(id) && $(id).addEventListener('change', () => {
-    const on = ['d_other', 'm_other', 'l_other'].some(x => $(x) && $(x).checked);
+  ['d_other', 'm_other', 'l_other', 's_other'].forEach(id => $(id) && $(id).addEventListener('change', () => {
+    const on = ['d_other', 'm_other', 'l_other', 's_other'].some(x => $(x) && $(x).checked);
     let w = $('warn_other');
     if (on && !w){ w = document.createElement('p'); w.id = 'warn_other'; w.className = 'small'; w.style.color = '#a35400';
       w.textContent = 'Achtung: Dieser Text nennt Anlässe/Notizen, die die angehakte Person sonst nicht sieht. Bitte prüfen und ggf. neutral formulieren.';
@@ -701,7 +712,7 @@ function openPublishSheet(){
     if (!on && w) w.remove();
   }));
   $('dopub').onclick = () => doPublish(['amj', 'k4', 'other'].filter(g => $('t_' + g)).map(g => ({
-    text: $('t_' + g).value.trim(), wer: 'I' + ($('d_' + g).checked ? 'D' : '') + ($('m_' + g).checked ? 'M' : '') + ($('l_' + g) && $('l_' + g).checked ? 'L' : '') })).filter(x => x.text));
+    text: $('t_' + g).value.trim(), wer: 'I' + ($('d_' + g).checked ? 'D' : '') + ($('m_' + g).checked ? 'M' : '') + ($('l_' + g) && $('l_' + g).checked ? 'L' : '') + ($('s_' + g) && $('s_' + g).checked ? 'S' : '') })).filter(x => x.text));
 }
 
 /* --- Speichern bei GitHub --- */
@@ -805,7 +816,7 @@ async function syncFeeds(master, force){
   const desc = feedDesc();
   if (!force){ const g = await gistCall('/' + F.ius.id, 'GET'); if (g && feedIsCurrent(g.description)) return 'ok'; }
   const vs = PlannerCore.deriveViews(master);
-  for (const v of ['ius', 'v2', 'v3', 'v4']) if (F[v])
+  for (const v of ['ius', 'v2', 'v3', 'v4', 'v5']) if (F[v])
     await gistCall('/' + F[v].id, 'PATCH', { description: desc, files: { [ICS_FILE]: { content: PlannerCore.buildICS(vs[v]) } } });
   return 'updated';
 }
@@ -817,7 +828,7 @@ async function setupFeeds(say){
   say('Richte Kalender-Links ein …');
   try {
     const vs = PlannerCore.deriveViews(PUB), feeds = {};
-    for (const v of ['ius', 'v2', 'v3', 'v4']) feeds[v] = await newGist(v, vs);
+    for (const v of ['ius', 'v2', 'v3', 'v4', 'v5']) feeds[v] = await newGist(v, vs);
     const d = todayDE(), [dd, mm, yy] = d.split('.');
     const master = clone(PUB); master.feeds = feeds;
     master.changes = [...PUB.changes, { d, iso: `${yy}-${mm}-${dd}`, wer: 'IDM', text: 'Neu: Knopf „Kalender“ – den Plan im eigenen Kalender abonnieren (Outlook, iPhone, Apple, Google); aktualisiert sich von selbst.' }];
@@ -836,7 +847,7 @@ async function renewFeed(view, say){
     render(ROOT, true); openCal(`Neuer Link erzeugt. Der alte funktioniert nicht mehr – bitte neu abonnieren${view === 'ius' ? '' : ' bzw. den neuen Link weitergeben'}.`);
   } catch(err){ publishError(err, say); }
 }
-const viewName = v => v === 'ius' ? NM.ius : v === 'v2' ? NM.p2 : v === 'v3' ? NM.v3 : (NM.k5 || v);
+const viewName = v => v === 'ius' ? NM.ius : v === 'v2' ? NM.p2 : v === 'v3' ? NM.v3 : v === 'v5' ? NM.k4 : (NM.k5 || v);
 /* fehlenden Kalender-Link einer neuen Ansicht nachträglich anlegen */
 async function addFeed(view, say){
   say('Richte Kalender-Link ein …');
@@ -871,11 +882,11 @@ function openCal(note){
   }
   if (isRoot && feeds){
     h += `<h4 style="margin:18px 0 6px">Links der anderen</h4><p class="small">Sehen ${esc(NM.p2)} und ${esc(NM.v3)} auch selbst in ihrer Ansicht unter „Kalender“.</p>
-      ${['v2', 'v3', 'v4'].filter(v => feeds[v]).map(v => `<div style="margin:8px 0"><b>${esc(viewName(v))}</b>${copyRow(feeds[v].raw, v)}</div>`).join('')}
-      ${!feeds.v4 && NM.k5 ? `<button class="btn" style="width:100%;margin:6px 0" id="caladd4">Kalender-Link für ${esc(NM.k5)} einrichten</button>` : ''}
+      ${['v2', 'v3', 'v4', 'v5'].filter(v => feeds[v]).map(v => `<div style="margin:8px 0"><b>${esc(viewName(v))}</b>${copyRow(feeds[v].raw, v)}</div>`).join('')}
+      ${['v4', 'v5'].filter(v => !feeds[v] && ROOT.others[v]).map(v => `<button class="btn" style="width:100%;margin:6px 0" data-caladd="${v}">Kalender-Link für ${esc(viewName(v))} einrichten</button>`).join('')}
       <details class="howto"><summary>Link ungültig machen und neu erzeugen</summary>
         <p class="small">Falls ein Link in falsche Hände geraten ist. Wer ihn abonniert hat, muss danach neu abonnieren.</p>
-        <div class="quick">${['ius', 'v2', 'v3', 'v4'].filter(v => feeds[v]).map(v => `<button class="btn" data-renew="${v}">${esc(viewName(v))}</button>`).join('')}</div></details>
+        <div class="quick">${['ius', 'v2', 'v3', 'v4', 'v5'].filter(v => feeds[v]).map(v => `<button class="btn" data-renew="${v}">${esc(viewName(v))}</button>`).join('')}</div></details>
       <p class="small" id="calstate">Prüfe Stand der Kalender …</p>
       <button class="btn" style="width:100%;margin-top:8px" id="calsync">Kalender jetzt aktualisieren</button>`;
   }
@@ -903,7 +914,7 @@ function openCal(note){
   showState();
   if ($('calsync')) $('calsync').onclick = async () => { say('Aktualisiere …'); try { await syncFeeds(PUB, true); FEED_ERR = null; say('Kalender aktualisiert ✓', 'ok'); showState(); } catch(err){ FEED_ERR = err; publishError(err, say); } };
   $('sheetcard').querySelectorAll('[data-renew]').forEach(b => b.onclick = () => renewFeed(b.dataset.renew, say));
-  if ($('caladd4')) $('caladd4').onclick = () => store.get(TOKEN_KEY) ? addFeed('v4', say) : openTokenSheet(false);
+  $('sheetcard').querySelectorAll('[data-caladd]').forEach(b => b.onclick = () => store.get(TOKEN_KEY) ? addFeed(b.dataset.caladd, say) : openTokenSheet(false));
 }
 
 /* --- Schreibzugang (einmal pro Gerät) --- */
@@ -1080,7 +1091,7 @@ function render(v, keepMonth){
   $('preview').classList.toggle('hidden', !isPreview);
   if (isPreview) $('preview').textContent = `So sieht ${v.label} den Plan mit der eigenen PIN. Nur zur Ansicht.`;
   if (ROOT && ROOT.others){
-    const opts = [['ius', ROOT], ['v2', ROOT.others.v2], ['v3', ROOT.others.v3], ...(ROOT.others.v4 ? [['v4', ROOT.others.v4]] : [])];
+    const opts = [['ius', ROOT], ['v2', ROOT.others.v2], ['v3', ROOT.others.v3], ...['v4', 'v5'].filter(k => ROOT.others[k]).map(k => [k, ROOT.others[k]])];
     $('switch').innerHTML = '<span class="lab">Ansicht:</span> ' + opts.map(([k, p]) => `<button data-view="${k}" class="${p === v ? 'on' : ''}">${esc(p.label)}</button>`).join('');
     $('switch').classList.remove('hidden');
   } else $('switch').classList.add('hidden');
@@ -1098,7 +1109,7 @@ function render(v, keepMonth){
     MI = found >= 0 ? found : (k < MONTHS[0].key ? 0 : MONTHS.length - 1);
   }
   $('editbtn').classList.toggle('hidden', !(ROOT && ROOT.master && v === ROOT));
-  $('pdfbtn').classList.toggle('hidden', v.view === 'v4');   // Ansicht 4: ohne PDF
+  $('pdfbtn').classList.toggle('hidden', v.view === 'v4' || v.view === 'v5');   // Ansichten 4 und 5: ohne PDF
   if (EDIT && v !== ROOT) EDIT = false;
   $('editbtn').classList.toggle('on', EDIT);
   renderNews(v); renderMonth(); renderYear(); renderTable(v); renderEditBar();
