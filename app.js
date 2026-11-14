@@ -132,8 +132,14 @@ function renderNews(v){
 }
 function showChanges(v){
   const all = (v.changes || []).slice().reverse();
+  const key = t => t.split('.').reverse().join('');
+  const log = []; v.days.forEach(d => (d.vl || []).forEach(([t, by, txt]) => log.push({ t, by, txt, d })));
+  log.sort((a, b) => key(b.t).localeCompare(key(a.t)) || key(a.d.d).localeCompare(key(b.d.d)));
   $('sheetcard').innerHTML = `<h3>Alle Änderungen</h3><div class="sub">Neueste zuerst</div>
     ${all.length ? `<ul class="changelist">${all.map(c => `<li>${esc(c.text)} <small>(${esc(c.d)})</small></li>`).join('')}</ul>` : '<p>Noch keine Änderungen.</p>'}
+    <h4 style="margin:18px 0 4px">Verlauf: geänderte Tage</h4>
+    <div class="sub" style="margin-bottom:6px">Wann welcher Tag von wem geändert wurde (seit 10.11.2026).</div>
+    ${log.length ? `<div class="hist">${log.slice(0, 80).map(e => `<div class="hl"><span class="ht">${esc(e.t)}${e.by ? ' · ' + esc(e.by) : ''} · für ${esc(e.d.w)} ${esc(e.d.d)}</span>${esc(e.txt)}</div>`).join('')}</div>` : '<p class="small">Noch keine Einträge.</p>'}
     <button id="closesheet">Schließen</button>`;
   $('sheet').classList.remove('hidden'); $('closesheet').onclick = closeDetail;
 }
@@ -274,6 +280,9 @@ function detailRows(v, d){
   if (v.view === 'v4') return [...KINDER.map((n,i) => [n, d.k[i] === 'I' ? `bei ${NM.ius}` : `bei ${NM.p2}`]), [NM.k4, d.s === 'I' ? `bei ${NM.ius}` : `bei ${NM.v3}`]];
   return [[NM.k4, d.s === 'M' ? 'bei dir' : `bei ${NM.ius}`]];
 }
+/* Verlauf eines Tages: wann, wer, was (nur, was diese Ansicht sehen darf) */
+const histBlock = d => !d.vl ? '<p class="small" style="margin-top:12px">Verlauf: seit 10.11.2026 nicht geändert.</p>'
+  : `<div class="hist"><h4>Verlauf</h4>${d.vl.map(([t, by, txt]) => `<div class="hl"><span class="ht">${esc(t)}${by ? ' · ' + esc(by) : ''}</span>${esc(txt)}</div>`).join('')}</div>`;
 function openDetail(i){
   const d = V.days[i];
   $('sheetcard').innerHTML = `
@@ -283,6 +292,7 @@ function openDetail(i){
     ${d.u ? `<div class="kv">${d.u.map(u => `<span class="k">${u[0] ? esc(u[0]) : 'Übergabe'}</span><span>${esc(u[1])}</span>`).join('')}</div>` : ''}
     ${d.a ? `<div class="kv"><span class="k">Anlass</span><span>${esc(d.a)}</span></div>` : ''}
     ${d.c ? `<div class="note">${esc(d.c)}</div>` : ''}
+    ${histBlock(d)}
     ${V.contact ? `<button class="btn pri" style="width:100%;margin-top:14px;padding:11px" data-req="${i}">✉️ Änderung anfragen</button>` : ''}
     <button id="closesheet">Schließen</button>`;
   $('sheet').classList.remove('hidden');
@@ -735,6 +745,8 @@ async function commitMaster(master, message){
     remote = await raw.json();
   }
   if (remote.rev !== VAULT.rev) throw { kind:'conflict' };   // nur exakt der Stand, auf dem bearbeitet wurde
+  // Verlauf je Tag: Unterschiede zum veröffentlichten Stand festhalten
+  master.hist = [...(master.hist || []), ...PlannerCore.diffRows(PUB.rows, master.rows, todayDE(), PUB.names.ius)];
   const vault = await PlannerCore.buildVault(master, ROOT.keys, VAULT.salt, VAULT.iter, PlannerCore.revNum(remote) + 1);
   const put = await fetch(api, { method:'PUT', headers: { ...h, 'Content-Type':'application/json' },
     body: JSON.stringify({ message, content: btoa(JSON.stringify(vault)), sha: meta.sha, branch:'main',

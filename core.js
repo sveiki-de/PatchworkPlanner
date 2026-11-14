@@ -30,6 +30,8 @@
       if (prev && dt - prev !== 864e5) err.push(`${r.d}: Lücke oder doppelter Tag`);
       prev = dt;
     });
+    if (master.hist && !Array.isArray(master.hist)) err.push('Verlauf ungültig');
+    (master.hist || []).forEach((h, i) => { if (!h || !/^\d\d\.\d\d\.\d{4}$/.test(h.d || '') || !/^\d\d\.\d\d\.\d{4}$/.test(h.t || '')) err.push(`Verlauf ${i + 1} ungültig`); });
     (master.changes || []).forEach((c, i) => { if (!/^[IDMLS]+$/.test(c.wer || '') || !c.text) err.push(`Änderung ${i + 1} ungültig`); });
     return err;
   }
@@ -151,6 +153,35 @@
     if (master.contact && master.contact.whatsapp) {                 // für „Änderung anfragen“ per WhatsApp
       views.v2.contact = views.v3.contact = { wa: master.contact.whatsapp, to: N.p1 };
     }
+    // Verlauf je Tag (master.hist): je Ansicht nur, was sie auch sieht – Notizen nur IuS
+    const kidName = (idx, view) => idx.length === 3 ? (view === 'ius' ? 'AMJ' : view === 'v2' ? 'Die Kinder' : N.kids.join(', ').replace(/, ([^,]*)$/, ' & $1')) : idx.map(j => N.kids[j]).join(' & ');
+    const PLACE_K = { ius: { I: 'bei uns', D: `bei ${N.p2}` }, v2: { I: `bei ${N.p1}`, D: 'bei dir' }, v4: { I: `bei ${N.ius}`, D: `bei ${N.p2}` }, v5: { I: 'da', D: `bei ${N.p2}` } };
+    const PLACE_S = { ius: { I: 'bei uns', M: `bei ${N.v3}` }, v3: { I: `bei ${N.ius}`, M: 'bei dir' }, v4: { I: `bei ${N.ius}`, M: `bei ${N.v3}` }, v5: { I: `bei ${N.ius}`, M: `bei ${N.v3}` } };
+    const FILTER = { ius: x => x, v2: filterD, v3: filterM, v4: filterL, v5: filterS };
+    const histText = (view, e) => {
+      const o = e.o || {}, n = e.n || {}, out = [];
+      if ('k' in n && PLACE_K[view]) {
+        const groups = {};
+        [0, 1, 2].forEach(j => { if ((o.k || '')[j] !== n.k[j]) (groups[(o.k || '???')[j] + n.k[j]] = groups[(o.k || '???')[j] + n.k[j]] || []).push(j); });
+        Object.entries(groups).forEach(([tr, idx]) => out.push(`${kidName(idx, view)}: ${PLACE_K[view][tr[0]] || '?'} → ${PLACE_K[view][tr[1]]}`));
+      }
+      if ('s' in n && PLACE_S[view] && o.s !== n.s) out.push(`${view === 'v5' ? 'Du' : N.k4}: ${PLACE_S[view][o.s] || '?'} → ${PLACE_S[view][n.s]}`);
+      if ('a' in n || 'a' in o) {
+        const fa = v => parts(v || '').map(FILTER[view]).filter(Boolean).join(' · ');
+        const was = fa(o.a), now = fa(n.a);
+        if (was !== now) out.push(!was ? `Termin neu: „${now}“` : !now ? `Termin entfernt: „${was}“` : `Termin: „${was}“ → „${now}“`);
+      }
+      if (('f' in n || 'f' in o) && !!o.f !== !!n.f) out.push(n.f ? 'als Schulferien markiert' : 'Schulferien-Markierung entfernt');
+      if (view === 'ius' && ('c' in n || 'c' in o) && (o.c || '') !== (n.c || '')) out.push('Notiz geändert');
+      if ((view === 'ius' || view === 'v2') && ('x' in n || 'x' in o) && (o.x || '') !== (n.x || '')) out.push('Abholen/Bringen angepasst');
+      return out.join('; ');
+    };
+    const histByDay = {};
+    (master.hist || []).forEach(e => { (histByDay[e.d] = histByDay[e.d] || []).push(e); });
+    for (const view of VIEWS) views[view].days.forEach(day => {
+      const vl = (histByDay[day.d] || []).map(e => [e.t, e.by || '', histText(view, e)]).filter(x => x[2]).reverse();
+      if (vl.length) day.vl = vl;
+    });
     views.ius.others = { v2: views.v2, v3: views.v3, v4: views.v4, v5: views.v5 };
     return views;
   }
@@ -264,9 +295,23 @@
     }).join('\r\n') + '\r\n';
   }
 
+  /* Unterschiede zwischen zwei Ständen als Verlaufseinträge (je geändertem Tag ein Eintrag) */
+  const HIST_FIELDS = ['k', 's', 'a', 'c', 'f', 'x'];
+  function diffRows(oldRows, newRows, t, by) {
+    const old = {}; (oldRows || []).forEach(r => { old[r.d] = r; });
+    const out = [];
+    (newRows || []).forEach(r => {
+      const p = old[r.d]; if (!p) return;
+      const o = {}, n = {};
+      HIST_FIELDS.forEach(f => { const a = f === 'f' ? !!p[f] : (p[f] || ''), b = f === 'f' ? !!r[f] : (r[f] || ''); if (a !== b) { o[f] = f === 'f' ? +a : a; n[f] = f === 'f' ? +b : b; } });
+      if (Object.keys(n).length) out.push({ t, d: r.d, by, o, n });
+    });
+    return out;
+  }
+
   /* Versionsnummer einer data.json (ältere Stände hatten einen Zeitstempel → 0) */
   const revNum = v => (v && Number.isInteger(v.rev)) ? v.rev : 0;
 
   root.PlannerCore = { buildICS, revNum, WT, FEIERTAGE, ALLGEMEIN, parts, parseDate, fmt, isoWeek, validate, deriveViews,
-    b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault };
+    b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, diffRows };
 })(typeof window !== 'undefined' ? window : globalThis);
