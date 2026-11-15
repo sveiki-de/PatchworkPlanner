@@ -897,7 +897,8 @@ function openCal(note){
       <details class="howto"><summary>Google Kalender</summary>Im Browser: links bei „Weitere Kalender“ auf <b>+</b> → <b>Per URL</b> → Link einfügen.</details>
       <p class="small">Bitte den Link nicht weitergeben – wer ihn hat, kann die Termine sehen (ohne PIN).</p>`;
   } else if (!isRoot){
-    h += `<p>Das Kalender-Abo ist noch nicht eingerichtet.</p>`;
+    h += `<p>Das Kalender-Abo ist für dich noch nicht eingerichtet.</p>
+      <p class="small">${NM.p1 ? esc(NM.p1) + ' muss es erst freischalten – sag ihm einfach Bescheid.' : 'Es muss erst freigeschaltet werden – bitte bei Ina & Sven melden.'} Danach findest du hier deinen persönlichen Link.</p>`;
   } else {
     h += `<p class="small">Noch keine Kalender-Links vorhanden. Beim Einrichten entstehen drei geheime Links – für euch, für ${esc(NM.p2)} und für ${esc(NM.v3)}. Jede Person sieht darin nur ihre eigene Ansicht.</p>
       <p class="small">Voraussetzung: Schreibzugang auf diesem Gerät mit dem Recht „Gists: Read and write“.</p>

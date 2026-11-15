@@ -130,7 +130,7 @@
     const namesV2 = { kids: N.kids, p1: N.p1, p2: N.p2 };
     const namesV3 = { k4: N.k4, p1: N.p1, ius: N.ius, v3: N.v3 };
     const namesV4 = { kids: N.kids, k4: N.k4, p1: N.p1, ius: N.ius, p2: N.p2, v3: N.v3, k5: N.k5 };
-    const namesV5 = { kids: N.kids, k4: N.k4, ius: N.ius, p2: N.p2, v3: N.v3 };
+    const namesV5 = { kids: N.kids, k4: N.k4, p1: N.p1, ius: N.ius, p2: N.p2, v3: N.v3 };
     const views = {
       ius: { view: 'ius', label: N.ius, stand: master.stand, names, changes: changesFor('I'),
         days: list.map((d, i) => withEv('ius', i, { ...base(d), k: d.amj, s: d.k4, a: d.anlass, c: d.kommentar })) },
