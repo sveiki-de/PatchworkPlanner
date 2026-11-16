@@ -215,6 +215,7 @@
     const errs = validate(master);
     if (errs.length) throw new Error('Daten fehlerhaft: ' + errs.slice(0, 5).join('; '));
     const views = deriveViews(master);
+    delete views.ius.others;              // R2: die anderen Ansichten nicht doppelt speichern – expandRoot() leitet sie beim Öffnen ab
     views.ius.master = master;            // nur Hauptansicht: Stammdaten + Schlüssel zum Bearbeiten
     views.ius.keys = keys;
     const blobs = [];
@@ -226,6 +227,13 @@
     }
     for (let i = blobs.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [blobs[i], blobs[j]] = [blobs[j], blobs[i]]; }
     return { format: 2, rev: Number.isInteger(rev) && rev > 0 ? rev : 1, salt: saltB64, iter, blobs };
+  }
+
+  /* Entschlüsselter Block der Hauptansicht → vollständige Ansicht inkl. der anderen (aus den Stammdaten abgeleitet).
+     Andere Ansichten und ältere Blöcke (mit gespeicherten „others“) bleiben unverändert. */
+  function expandRoot(v) {
+    if (!v || !v.master || v.others) return v;
+    return Object.assign(deriveViews(v.master).ius, { master: v.master, keys: v.keys });
   }
 
   /* ---------- Kalender (iCalendar/ICS) für Outlook, Apple, Google ---------- */
@@ -313,5 +321,5 @@
   const revNum = v => (v && Number.isInteger(v.rev)) ? v.rev : 0;
 
   root.PlannerCore = { buildICS, revNum, WT, FEIERTAGE, ALLGEMEIN, parts, parseDate, fmt, isoWeek, validate, deriveViews,
-    b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, diffRows };
+    b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, expandRoot, diffRows };
 })(typeof window !== 'undefined' ? window : globalThis);

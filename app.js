@@ -19,7 +19,7 @@ const store = {
   del(k = LS_KEY){ try { localStorage.removeItem(k); } catch(e){} }
 };
 
-const unlock = pin => PlannerCore.decryptVault(VAULT, pin);
+const unlock = async pin => PlannerCore.expandRoot(await PlannerCore.decryptVault(VAULT, pin));
 
 /* ================= Helfer ================= */
 const isWE = d => d.w === 'Sa' || d.w === 'So';
@@ -746,8 +746,9 @@ async function commitMaster(master, message){
   const meta = await cur.json();
   let remote;
   if (meta.content) remote = JSON.parse(atob(String(meta.content).replace(/\s/g, '')));
-  else {                                              // Dateien > 1 MB liefert GitHub nur über die Rohdaten-Adresse
-    const raw = await fetch(meta.download_url, { cache:'no-store' });
+  else {                                              // Dateien > 1 MB: dieselbe Schnittstelle im Rohdaten-Format (immer aktuell, kein Zwischenspeicher)
+    const raw = await fetch(api + '?ref=main&ts=' + Date.now(), { headers: { ...h, Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+    if (raw.status === 401 || raw.status === 403 || raw.status === 404) throw { kind:'token' };
     if (!raw.ok) throw new Error('GitHub antwortet nicht (' + raw.status + ')');
     remote = await raw.json();
   }
