@@ -79,6 +79,8 @@
     const kidsTxt = (idx, view) => idx.length === 3 ? (view === 'v2' ? 'die Kinder' : 'AMJ') : idx.map(i => N.kids[i]).join(' & ');
     const wdOf = d => WT[d.date.getUTCDay()];
     const addAMJ = (i, t, f) => { ev.ius[i].push([t, f('ius'), 'amj']); ev.v2[i].push([t, f('v2'), 'amj']); };
+    // Ende eines reinen Kinder-WE (Fr bei Daniela, Sa+So bei Sven, Mo wieder bei Daniela): Rückgabe So 17:00, auch in den Ferien
+    const pureWEend = (i, dep) => list[i].f && list[i - 2] && wdOf(list[i - 1]) === 'Sa' && dep.every(j => list[i - 1].amj[j] === 'I' && list[i - 2].amj[j] === 'D');
     for (let i = 0; i < list.length; i++) {
       const d = list[i], p = list[i - 1], nx = list[i + 1];
       if (p) {
@@ -97,7 +99,7 @@
         const dep = [0, 1, 2].filter(j => d.amj[j] === 'I' && nx.amj[j] === 'D');
         if (dep.length) {
           if (d.x.includes('B')) addAMJ(i, '', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück (Zeit nach Absprache)`);   // Ausnahme B: Sven bringt zurück
-          else if (wdOf(d) === 'So' && !d.f && !nx.f) addAMJ(i, '17:00', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück`);
+          else if (wdOf(d) === 'So' && ((!d.f && !nx.f) || pureWEend(i, dep))) addAMJ(i, '17:00', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück`);
           else addAMJ(i, '', v => `${kidsTxt(dep, v)} zurück zu ${v === 'v2' ? 'dir' : N.p2} (Zeit nach Absprache)`);
         }
         // Freitags-Besuche werden bewusst nicht mehr eingetragen (Entscheidung 10.11.2026).
