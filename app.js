@@ -66,7 +66,7 @@ let LEG_OPEN = false;
 const legendBox = inner => `<details class="legbox"${LEG_OPEN ? ' open' : ''}><summary>Legende</summary>${inner}</details>`;
 document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('legbox')){ LEG_OPEN = e.target.open;
   document.querySelectorAll('.legbox').forEach(x => { if (x !== e.target && x.open !== LEG_OPEN) x.open = LEG_OPEN; }); } }, true);
-const ICONS_HELP = '🎂 Geburtstag · 🚗 Abholen/Bringen · • Termin · rote Zahl = Feiertag';
+const ICONS_HELP = '🎂 Geburtstag · 📌 Termin/Anlass · 🚗 Abholen/Bringen · rote Zahl = Feiertag';
 
 /* Zeiträume (für die Liste unter dem Monat) */
 function buildRuns(v){
@@ -156,12 +156,14 @@ function monthsOf(v){
     if (!g.length || g[g.length-1].key !== key) g.push({ key, y:dt.getFullYear(), m:dt.getMonth(), from:i, to:i }); else g[g.length-1].to = i; });
   return g;
 }
+/* Termin/Anlass: alles außer Geburtstagen (eigenes Symbol) und gesetzlichen Feiertagen (rote Zahl) */
+const isTermin = x => !/Geburtstag/.test(x) && !PlannerCore.FEIERTAGE.includes(x) && x !== 'Ostern';
 function icons(d){
   let s = '';
   if (/Geburtstag/.test(d.a)) s += '🎂';
+  if (PlannerCore.parts(d.a).some(isTermin)) s += '📌';
   if (d.u && d.u.some(u => u[2] !== 'visit')) s += '🚗';
   else if (d.u) s += '👋';
-  if (!s && d.a && !d.h) s += '•';
   return s;
 }
 function renderMonth(){
