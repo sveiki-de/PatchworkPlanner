@@ -107,10 +107,12 @@ main{max-width:1280px;margin:0 auto;padding:16px}
 .mc.today{outline:3px solid var(--ink);outline-offset:-1px}
 .mc .ic{position:absolute;top:3px;right:4px;font-size:13px;line-height:1;letter-spacing:-1px}
 @media(max-width:420px){.mc .ic{font-size:10px;top:4px;right:2px}}
-.mc .ks{position:absolute;left:5px;bottom:9px;display:flex;gap:2px;font-size:10px;font-weight:700;line-height:1}
-.mc .ks b{width:12px;height:12px;border-radius:3px;display:grid;place-items:center;color:#fff}
+.mc .ks{position:absolute;left:5px;right:3px;bottom:9px;display:flex;gap:2px;font-size:10px;font-weight:700;line-height:1}
+/* Buchstaben schrumpfen mit der Kästchenbreite (höchstens 12px), damit immer alle vier hineinpassen */
+.mc .ks b{flex:0 1 12px;min-width:0;aspect-ratio:1/1;border-radius:3px;display:grid;place-items:center;color:#fff;overflow:hidden}
 .mc .ks b.a{background:var(--kA)} .mc .ks b.s{background:var(--kS)} .mc .ks b.x{visibility:hidden}
-@media(max-width:420px){.mc .ks{left:3px;gap:1px}.mc .ks b{width:9px;height:9px;font-size:7px;border-radius:2px}.mc .n{font-size:14px}.mc{padding:3px 4px}}
+@media(max-width:520px){.mc .ks{left:3px;right:2px;gap:1px;font-size:7px}.mc .ks b{border-radius:2px}}
+@media(max-width:420px){.mc .n{font-size:14px}.mc{padding:3px 4px}}
 .legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:10px 0 4px}
 .legend span{display:inline-flex;align-items:center}
 .mlist{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:4px 16px 10px;margin-top:14px}
