@@ -47,18 +47,19 @@ function dayClass(view, d){
     if (MODE === 'da') return h === 3 ? 'on' : h ? 'kid' : '';
     return s === 3 ? 'fr' : s ? 'pf' : '';
   }
-  if (view === 'v4') return bei(d,'I').length ? 'kid' : '';
+  const nI = bei(d,'I').length;                          // 1–2 Kinder = Papa-Kind-Wochenende (eigene Farbe)
+  if (view === 'v4') return nI === 3 ? 'kid' : nI ? 'pk' : '';
   if (view === 'v5') return d.s === 'M' ? 'on' : '';
   if (/Männerurlaub/.test(d.a) && !bei(d,'I').length) return 'mu';
   if (iusFree(d)) return 'fr';
-  return bei(d,'I').length ? 'kid' : '';
+  return nI === 3 ? 'kid' : nI ? 'pk' : '';
 }
 const LEGEND = () => ({
   v3:   MODE === 'frei' ? [['fr',`frei – ${NM.k4} bei ${NM.ius}`],['fe','Schulferien']] : [['on',`${NM.k4} bei dir`],['fe','Schulferien']],
   v2: MODE === 'da' ? [['on','Kinder bei dir'],['kid','einzelne Kinder bei dir'],['fe','Schulferien']]
                          : [['fr',`frei – Kinder bei ${NM.p1}`],['pf','teilweise frei'],['fe','Schulferien']],
-  ius:     [['kid',`Kinder von ${NM.p1} da`],['fr','frei – ohne Kinder'],['mu','Männerurlaub'],['fe','Schulferien']],
-  v4:      [['kid',`Kinder von ${NM.p1} bei ${NM.ius}`],['fe','Schulferien']],
+  ius:     [['kid',`Kinder von ${NM.p1} da`],['pk','Papa-Kind-Wochenende (einzelne Kinder)'],['fr','frei – ohne Kinder'],['mu','Männerurlaub'],['fe','Schulferien']],
+  v4:      [['kid',`Kinder von ${NM.p1} bei ${NM.ius}`],['pk','Papa-Kind-Wochenende (einzelne Kinder)'],['fe','Schulferien']],
   v5:      [['on',`du bist bei ${NM.v3}`],['fe','Schulferien']]
 });
 /* Legende einklappbar (Standard: zu); Zustand bleibt beim Blättern erhalten */
@@ -93,10 +94,12 @@ function buildRuns(v){
     add(d => d.s === 'M', () => `Du bist bei ${NM.v3}`, 'on');
     add(d => bei(d,'I').length > 0, d => nameList(bei(d,'I')) + ' da', 'kid');
   } else if (v.view === 'v4'){
-    add(d => bei(d,'I').length > 0, d => nameList(bei(d,'I')) + ` bei ${NM.ius}`, 'kid');
+    add(d => bei(d,'I').length === 3, d => nameList(bei(d,'I')) + ` bei ${NM.ius}`, 'kid');
+    add(d => { const n = bei(d,'I').length; return n > 0 && n < 3; }, d => nameList(bei(d,'I')) + ` bei ${NM.ius}`, 'pk');
     add(d => d.s === 'M', () => `${NM.k4} bei ${NM.v3}`, 'v3');
   } else {
-    add(d => bei(d,'I').length > 0, d => bei(d,'I').length === 3 ? 'AMJ bei euch' : nameList(bei(d,'I')) + ' bei euch', 'kid');
+    add(d => bei(d,'I').length === 3, () => 'AMJ bei euch', 'kid');
+    add(d => { const n = bei(d,'I').length; return n > 0 && n < 3; }, d => nameList(bei(d,'I')) + ' bei euch', 'pk');
     add(d => d.s === 'M', () => `${NM.k4} bei ${NM.v3}`, 'v3');
     add(iusFree, () => 'frei – ohne Kinder', 'fr');
     add(d => /Männerurlaub/.test(d.a), () => `Männerurlaub ${NM.p1}`, 'mu');
@@ -236,7 +239,7 @@ const COLS = () => ({
     { head:'AMJ', cell(d){
         if (d.k === 'III') return ['AMJ','amj'];
         const b = bei(d,'I');
-        if (b.length) return [kurz(b), 'part'];
+        if (b.length) return [kurz(b), 'pk'];
         if (/Männerurlaub/.test(d.a)) return ['Männerurl.','mu'];
         if (isWE(d) || d.h || /Urlaub |Silvester|Jahre /.test(d.a)) return ['IuS','ius'];
         return ['', 'none'];
@@ -245,18 +248,18 @@ const COLS = () => ({
   ],
   v2: [ { head:'Kinder', cell(d){ if (d.k === 'DDD') return ['AMJ','amj']; const b = bei(d,'D'); return b.length ? [kurz(b), 'part'] : ['', 'none']; } } ],
   v3: [ { head:NM.k4, cell: d => d.s === 'M' ? [NM.k4,'amj'] : ['', 'none'] } ],
-  v4: [ { head:'AMJ', cell(d){ const b = bei(d,'I'); return b.length === 3 ? ['AMJ','amj'] : b.length ? [kurz(b), 'part'] : ['', 'none']; } },
+  v4: [ { head:'AMJ', cell(d){ const b = bei(d,'I'); return b.length === 3 ? ['AMJ','amj'] : b.length ? [kurz(b), 'pk'] : ['', 'none']; } },
         { head:NM.k4, cell: d => d.s === 'I' ? [NM.k4[0],'k4'] : [NM.v3[0],'v3'] } ],
   v5: [ { head:'Du', cell: d => d.s === 'M' ? [NM.v3,'amj'] : ['', 'none'] },
         { head:'AMJ', cell(d){ const b = bei(d,'I'); return b.length === 3 ? ['AMJ','part'] : b.length ? [kurz(b), 'part'] : ['', 'none']; } } ]
 });
 const TLEGEND = () => ({
-  ius: [['AMJ','amj','alle drei bei uns'],[KINDER[2],'part','nur einzelne Kinder'],['IuS','ius',`${NM.ius} ohne Kinder`],
+  ius: [['AMJ','amj','alle drei bei uns'],[KINDER[2],'pk','Papa-Kind-Wochenende'],['IuS','ius',`${NM.ius} ohne Kinder`],
         ['','mu',`Männerurlaub ${NM.p1}`],['IuS','k4',`${NM.k4} bei uns`],[NM.v3[0],'v3',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']],
   v2: [['AMJ','amj',`${KINDER.join(', ')} bei ${NM.p2}`],[KINDER[2],'part','nur einzelne Kinder'],['','ferien','Schulferien']],
   v3: [[NM.k4,'amj',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']],
   v5: [[NM.v3,'amj',`du bist bei ${NM.v3}`],['AMJ','part',`${KINDER.join(', ')} da`],['','ferien','Schulferien']],
-  v4: [['AMJ','amj',`alle drei bei ${NM.ius}`],[KINDER[2],'part','nur einzelne Kinder'],[NM.k4[0],'k4',`${NM.k4} bei ${NM.ius}`],[NM.v3[0],'v3',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']]
+  v4: [['AMJ','amj',`alle drei bei ${NM.ius}`],[KINDER[2],'pk','Papa-Kind-Wochenende'],[NM.k4[0],'k4',`${NM.k4} bei ${NM.ius}`],[NM.v3[0],'v3',`${NM.k4} bei ${NM.v3}`],['','ferien','Schulferien']]
 });
 function renderTable(v){
   $('tlegend').innerHTML = legendBox(`<div class="tleg">${TLEGEND()[v.view].map(([t,c,txt]) =>
@@ -321,7 +324,7 @@ function textW(s, size, bold){
   return w * size / 1000 * (bold ? 1.06 : 1);
 }
 const rgb = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
-const PC = { amj:rgb('#a3d68c'), part:rgb('#d9efc9'), ius:rgb('#d3c0ee'), pf:rgb('#ece4f8'), mu:rgb('#a9e2db'), k4:rgb('#c3dcf6'),
+const PC = { amj:rgb('#a3d68c'), part:rgb('#d9efc9'), pk:rgb('#f6cde0'), ius:rgb('#d3c0ee'), pf:rgb('#ece4f8'), mu:rgb('#a9e2db'), k4:rgb('#c3dcf6'),
   v3:rgb('#f7c792'), fe:rgb('#fff0a3'), ink:rgb('#26241f'), grey:rgb('#7a756b'), line:rgb('#d9d3c7'), we:rgb('#f3f0e9'), red:rgb('#c2452d'), white:[1,1,1] };
 function pdfCanvas(H){
   const ops = [], f = n => n.toFixed(2), c = a => a.map(x => x.toFixed(3)).join(' ');
@@ -364,7 +367,7 @@ function pdfBytes(pages, W, H){
 function pdfCols(view){
   const ini = arr => arr.map(n => n[0]).join('');
   if (view === 'v4') return [
-    [22, d => { const b = bei(d,'I'); return b.length === 3 ? ['AMJ', PC.amj] : b.length ? [ini(b), PC.part] : ['', null]; }],
+    [22, d => { const b = bei(d,'I'); return b.length === 3 ? ['AMJ', PC.amj] : b.length ? [ini(b), PC.pk] : ['', null]; }],
     [11, d => d.s === 'I' ? [NM.k4[0], PC.k4] : [NM.v3[0], PC.v3]]];
   if (view === 'v3') return [[22, MODE === 'frei' ? (d => d.s === 'I' ? ['frei', PC.ius] : ['', null]) : (d => d.s === 'M' ? [NM.k4, PC.amj] : ['', null])]];
   if (view === 'v2') return [[22, MODE === 'da'
@@ -373,7 +376,7 @@ function pdfCols(view){
   return [
     [22, d => { const b = bei(d,'I');
       if (b.length === 3) return ['AMJ', PC.amj];
-      if (b.length) return [ini(b), PC.part];
+      if (b.length) return [ini(b), PC.pk];
       if (/Männerurlaub/.test(d.a)) return ['MU', PC.mu];
       if (iusFree(d)) return ['IuS', PC.ius];
       return ['', null]; }],
@@ -381,11 +384,11 @@ function pdfCols(view){
   ];
 }
 function pdfLegend(view){
-  if (view === 'v4') return [[PC.amj, `AMJ = alle drei bei ${NM.ius}`], [PC.part, 'Buchstaben = nur diese Kinder'], [PC.k4, `${NM.k4[0]} = ${NM.k4} bei ${NM.ius}`], [PC.v3, `${NM.v3[0]} = ${NM.k4} bei ${NM.v3}`]];
+  if (view === 'v4') return [[PC.amj, `AMJ = alle drei bei ${NM.ius}`], [PC.pk, 'Papa-Kind-WE (nur diese Kinder)'], [PC.k4, `${NM.k4[0]} = ${NM.k4} bei ${NM.ius}`], [PC.v3, `${NM.v3[0]} = ${NM.k4} bei ${NM.v3}`]];
   if (view === 'v3') return MODE === 'frei' ? [[PC.ius, `frei = ${NM.k4} bei ${NM.ius}`]] : [[PC.amj, `${NM.k4} = ${NM.k4} bei dir`]];
   if (view === 'v2') return MODE === 'da' ? [[PC.amj, 'da = alle drei bei dir'], [PC.part, 'Buchstaben = nur diese Kinder bei dir']]
     : [[PC.ius, `frei = Kinder bei ${NM.p1}`], [PC.pf, `Buchstaben = nur diese Kinder bei ${NM.p1}`]];
-  return [[PC.amj, 'AMJ = alle drei da'], [PC.part, 'Buchstaben = nur diese Kinder'], [PC.ius, 'IuS = ohne Kinder'], [PC.mu, 'MU = Männerurlaub'],
+  return [[PC.amj, 'AMJ = alle drei da'], [PC.pk, 'Papa-Kind-WE (nur diese Kinder)'], [PC.ius, 'IuS = ohne Kinder'], [PC.mu, 'MU = Männerurlaub'],
           [PC.k4, `${NM.k4[0]} = ${NM.k4} da`], [PC.v3, `${NM.v3[0]} = ${NM.k4} bei ${NM.v3}`]];
 }
 function buildPdf(v){
