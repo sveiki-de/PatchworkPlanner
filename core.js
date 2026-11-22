@@ -8,7 +8,7 @@
     'Christi Himmelfahrt', 'Pfingsten', 'Pfingstmontag', 'Fronleichnam', 'Mariä Himmelfahrt', 'Tag der Dt. Einheit',
     'Allerheiligen', '1. Weihnachtstag', '2. Weihnachtstag'];
   const ALLGEMEIN = ['Rosenmontag', 'Muttertag', 'Halloween', 'Buß- und Bettag', '1. Advent', 'Heiligabend', 'Silvester'];
-  const VIEWS = ['ius', 'v2', 'v3', 'v4', 'v5'];
+  const VIEWS = ['ius', 'v2', 'v3', 'v4', 'v5', 'v6'];
 
   const parts = s => s ? String(s).split(' · ').map(x => x.trim()).filter(Boolean) : [];
   const parseDate = s => { const [d, m, y] = s.split('.').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
@@ -32,7 +32,7 @@
     });
     if (master.hist && !Array.isArray(master.hist)) err.push('Verlauf ungültig');
     (master.hist || []).forEach((h, i) => { if (!h || !/^\d\d\.\d\d\.\d{4}$/.test(h.d || '') || !/^\d\d\.\d\d\.\d{4}$/.test(h.t || '')) err.push(`Verlauf ${i + 1} ungültig`); });
-    (master.changes || []).forEach((c, i) => { if (!/^[IDMLS]+$/.test(c.wer || '') || !c.text) err.push(`Änderung ${i + 1} ungültig`); });
+    (master.changes || []).forEach((c, i) => { if (!/^[IDMLSA]+$/.test(c.wer || '') || !c.text) err.push(`Änderung ${i + 1} ungültig`); });
     return err;
   }
 
@@ -70,6 +70,14 @@
       if (x === 'Ostern (AMJ ab Mittag)') return 'Ostern';
       if (x === `${N.k4} Geburtstag`) return 'Dein Geburtstag';
       if (FEIERTAGE.includes(x) || ALLGEMEIN.includes(x) || x === 'Fasching' || kidBirthdays.includes(x) || (N.k5 && x === `${N.k5} Geburtstag`)) return x;
+      return null;
+    };
+    const filterA = x => {                                                // v6 (Kind 1): wie v4, dazu Papa-Kind-WE; eigener Geburtstag als „Dein Geburtstag“
+      if (x === 'Fasching/Ball') return 'Fasching';
+      if (x === 'Ostern (AMJ ab Mittag)') return 'Ostern';
+      if (x === `${N.kids[0]} Geburtstag`) return 'Dein Geburtstag';
+      if (FEIERTAGE.includes(x) || ALLGEMEIN.includes(x) || x === 'Fasching' || x.startsWith('Papa-Kind-WE') || kidBirthdays.includes(x)
+        || x === `${N.k4} Geburtstag` || (N.k5 && x === `${N.k5} Geburtstag`)) return x;
       return null;
     };
     const changesFor = c => (master.changes || []).filter(x => x.wer.includes(c)).map(({ d, iso, text }) => ({ d, iso, text }));
@@ -146,20 +154,24 @@
       // v5: wo Kind 4 selbst ist (+ eigene Fahrten) und wann AMJ da sind; ohne Notizen, Orte, Kontakt
       v5: { view: 'v5', label: N.k4, stand: master.stand, names: namesV5, changes: changesFor('S'),
         days: list.map((d, i) => withEv('v5', i, { ...base(d), k: d.amj, s: d.k4, a: parts(d.anlass).map(filterS).filter(Boolean).join(' · ') })) },
+      // v6: Kind 1 – Anwesenheiten aller Kinder wie v4, ohne Übergaben, Notizen, Orte, Kontakt
+      v6: { view: 'v6', label: N.kids[0], stand: master.stand, names: namesV4, changes: changesFor('A'),
+        days: list.map(d => ({ ...base(d), k: d.amj, s: d.k4, a: parts(d.anlass).map(filterA).filter(Boolean).join(' · ') })) },
     };
     const F = master.feeds || {};                                         // geheime Kalender-Links je Ansicht
     if (F.v2 && F.v2.raw) views.v2.calUrl = F.v2.raw;
     if (F.v3 && F.v3.raw) views.v3.calUrl = F.v3.raw;
     if (F.v4 && F.v4.raw) views.v4.calUrl = F.v4.raw;
     if (F.v5 && F.v5.raw) views.v5.calUrl = F.v5.raw;
+    if (F.v6 && F.v6.raw) views.v6.calUrl = F.v6.raw;
     if (master.contact && master.contact.whatsapp) {                 // für „Änderung anfragen“ per WhatsApp
       views.v2.contact = views.v3.contact = { wa: master.contact.whatsapp, to: N.p1 };
     }
     // Verlauf je Tag (master.hist): je Ansicht nur, was sie auch sieht – Notizen nur IuS
     const kidName = (idx, view) => idx.length === 3 ? (view === 'ius' ? 'AMJ' : view === 'v2' ? 'Die Kinder' : N.kids.join(', ').replace(/, ([^,]*)$/, ' & $1')) : idx.map(j => N.kids[j]).join(' & ');
-    const PLACE_K = { ius: { I: 'bei uns', D: `bei ${N.p2}` }, v2: { I: `bei ${N.p1}`, D: 'bei dir' }, v4: { I: `bei ${N.ius}`, D: `bei ${N.p2}` }, v5: { I: 'da', D: `bei ${N.p2}` } };
-    const PLACE_S = { ius: { I: 'bei uns', M: `bei ${N.v3}` }, v3: { I: `bei ${N.ius}`, M: 'bei dir' }, v4: { I: `bei ${N.ius}`, M: `bei ${N.v3}` }, v5: { I: `bei ${N.ius}`, M: `bei ${N.v3}` } };
-    const FILTER = { ius: x => x, v2: filterD, v3: filterM, v4: filterL, v5: filterS };
+    const PLACE_K = { ius: { I: 'bei uns', D: `bei ${N.p2}` }, v2: { I: `bei ${N.p1}`, D: 'bei dir' }, v4: { I: `bei ${N.ius}`, D: `bei ${N.p2}` }, v5: { I: 'da', D: `bei ${N.p2}` }, v6: { I: `bei ${N.ius}`, D: `bei ${N.p2}` } };
+    const PLACE_S = { ius: { I: 'bei uns', M: `bei ${N.v3}` }, v3: { I: `bei ${N.ius}`, M: 'bei dir' }, v4: { I: `bei ${N.ius}`, M: `bei ${N.v3}` }, v5: { I: `bei ${N.ius}`, M: `bei ${N.v3}` }, v6: { I: `bei ${N.ius}`, M: `bei ${N.v3}` } };
+    const FILTER = { ius: x => x, v2: filterD, v3: filterM, v4: filterL, v5: filterS, v6: filterA };
     const histText = (view, e) => {
       const o = e.o || {}, n = e.n || {}, out = [];
       if ('k' in n && PLACE_K[view]) {
@@ -184,7 +196,7 @@
       const vl = (histByDay[day.d] || []).map(e => [e.t, e.by || '', histText(view, e)]).filter(x => x[2]).reverse();
       if (vl.length) day.vl = vl;
     });
-    views.ius.others = { v2: views.v2, v3: views.v3, v4: views.v4, v5: views.v5 };
+    views.ius.others = { v2: views.v2, v3: views.v3, v4: views.v4, v5: views.v5, v6: views.v6 };
     return views;
   }
 
@@ -268,7 +280,7 @@
     } else if (v.view === 'v5') {
       runs(d => d.s === 'M', () => `Du bist bei ${N.v3}`, 'weg');
       runs(d => bei(d, 'I').length > 0, d => (bei(d, 'I').length === 3 ? N.kids.join(', ') : bei(d, 'I').join(' & ')) + ' da', 'da');
-    } else if (v.view === 'v4') {
+    } else if (v.view === 'v4' || v.view === 'v6') {
       runs(d => bei(d, 'I').length > 0, d => (bei(d, 'I').length === 3 ? N.kids.join(', ') : bei(d, 'I').join(' & ')) + ` bei ${N.ius}`, 'da');
       runs(d => d.s === 'M', () => `${N.k4} bei ${N.v3}`, 'weg');
     } else {
