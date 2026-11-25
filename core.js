@@ -87,16 +87,16 @@
     const kidsTxt = (idx, view) => idx.length === 3 ? (view === 'v2' ? 'die Kinder' : 'AMJ') : idx.map(i => N.kids[i]).join(' & ');
     const wdOf = d => WT[d.date.getUTCDay()];
     const addAMJ = (i, t, f) => { ev.ius[i].push([t, f('ius'), 'amj']); ev.v2[i].push([t, f('v2'), 'amj']); };
-    // Ende eines reinen Kinder-WE (Fr bei Daniela, Sa+So bei Sven, Mo wieder bei Daniela): Rückgabe So 17:00, auch in den Ferien
+    // Ende eines reinen Kinder-WE (Fr bei P2, Sa+So bei P1, Mo wieder bei P2): Rückgabe So 17:00, auch in den Ferien
     const pureWEend = (i, dep) => list[i].f && list[i - 2] && wdOf(list[i - 1]) === 'Sa' && dep.every(j => list[i - 1].amj[j] === 'I' && list[i - 2].amj[j] === 'D');
     for (let i = 0; i < list.length; i++) {
       const d = list[i], p = list[i - 1], nx = list[i + 1];
       if (p) {
         const arr = [0, 1, 2].filter(j => d.amj[j] === 'I' && p.amj[j] === 'D');
         if (arr.length) {
-          // reines Kinder-WE (nur Sa+So bei Sven, Mo wieder bei Daniela): Abholen am Freitag, auch in den Ferien
+          // reines Kinder-WE (nur Sa+So bei P1, Mo wieder bei P2): Abholen am Freitag, auch in den Ferien
           const pureWE = list[i + 1] && list[i + 2] && wdOf(list[i + 1]) === 'So' && arr.every(j => list[i + 1].amj[j] === 'I' && list[i + 2].amj[j] === 'D');
-          // Ausnahmen (Feld x): V = Abholung am Vorabend, A = Sven holt am Tag selbst ab (Zeit nach Absprache)
+          // Ausnahmen (Feld x): V = Abholung am Vorabend, A = P1 holt am Tag selbst ab (Zeit nach Absprache)
           if (d.x.includes('V')) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
           else if (d.x.includes('A')) addAMJ(i, '', v => `${N.p1} holt ${kidsTxt(arr, v)} ab (Zeit nach Absprache)`);
           else if (wdOf(d) === 'Sa' && wdOf(p) === 'Fr' && ((!d.f && !p.f) || pureWE)) addAMJ(i - 1, 'abends', v => `${N.p1} holt ${kidsTxt(arr, v)} ab`);
@@ -106,7 +106,7 @@
       if (nx) {
         const dep = [0, 1, 2].filter(j => d.amj[j] === 'I' && nx.amj[j] === 'D');
         if (dep.length) {
-          if (d.x.includes('B')) addAMJ(i, '', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück (Zeit nach Absprache)`);   // Ausnahme B: Sven bringt zurück
+          if (d.x.includes('B')) addAMJ(i, '', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück (Zeit nach Absprache)`);   // Ausnahme B: P1 bringt zurück
           else if (wdOf(d) === 'So' && ((!d.f && !nx.f) || pureWEend(i, dep))) addAMJ(i, '17:00', v => `${N.p1} bringt ${kidsTxt(dep, v)} zurück`);
           else addAMJ(i, '', v => `${kidsTxt(dep, v)} zurück zu ${v === 'v2' ? 'dir' : N.p2} (Zeit nach Absprache)`);
         }
@@ -334,6 +334,59 @@
   /* Versionsnummer einer data.json (ältere Stände hatten einen Zeitstempel → 0) */
   const revNum = v => (v && Number.isInteger(v.rev)) ? v.rev : 0;
 
+  /* ---------- Server (Phase 7): Lesen, Speichern, Anmelden ----------
+     fetchFn wird übergeben (Browser: fetch, Tests: nachgebauter Server). Fehler wie bisher als {kind:…}. */
+  const KENNUNG_RE = /^[a-z0-9_-]{1,32}$/;
+  async function serverLoad(fetchFn, base, kennung) {
+    if (!KENNUNG_RE.test(kennung || '')) throw new Error('Ungültige Plan-Kennung');
+    const r = await fetchFn(`${base}/api/planer/lesen/${kennung}?ts=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('Server antwortet nicht (' + r.status + ')');
+    const v = await r.json();
+    if (!v || !v.blobs || !Number.isInteger(v.rev)) throw new Error('Server liefert keinen gültigen Plan');
+    return v;
+  }
+  /* Speichert vault (mit rev = oldRev + 1). Gibt die neue rev zurück. Wirft {kind:'auth'|'conflict'} oder Error. */
+  async function serverSave(fetchFn, base, kennung, token, oldRev, vault) {
+    if (!token) throw { kind: 'auth' };
+    if (!vault || vault.rev !== oldRev + 1) throw new Error('Interner Fehler: Versionsnummer passt nicht');
+    let r;
+    try {
+      r = await fetchFn(`${base}/api/planer/speichern`, { method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json', Authorization: token },
+        body: JSON.stringify({ kennung, rev: oldRev, block: vault }) });
+    } catch (e) { throw new Error('Server nicht erreichbar'); }
+    if (r.status === 401 || r.status === 403) throw { kind: 'auth' };
+    if (r.status === 409) throw { kind: 'conflict' };
+    if (r.status === 413) throw new Error('Der Plan ist zu groß für den Server');
+    if (!r.ok) { let m = ''; try { m = (await r.json()).message || ''; } catch (e) {} throw new Error('Speichern fehlgeschlagen (' + r.status + (m ? ': ' + m : '') + ')'); }
+    const d = await r.json();
+    if (!d || d.rev !== vault.rev) throw new Error('Server bestätigt eine andere Version');
+    return d.rev;
+  }
+  /* Ablauf (ms) aus einem Anmelde-Token lesen; null, wenn unlesbar */
+  function tokenExp(token) {
+    try {
+      const p = String(token).split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      const json = typeof atob === 'function' ? atob(p + '==='.slice((p.length + 3) % 4)) : Buffer.from(p, 'base64').toString();
+      const exp = JSON.parse(json).exp; return Number.isFinite(exp) ? exp * 1000 : null;
+    } catch (e) { return null; }
+  }
+  /* Anmelden; gibt {token, exp} zurück oder wirft {kind:'login'} (falsche Daten) bzw. Error */
+  async function serverLogin(fetchFn, base, email, password) {
+    let r;
+    try {
+      r = await fetchFn(`${base}/api/collections/konten/auth-with-password`, { method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identity: email, password }) });
+    } catch (e) { throw new Error('Server nicht erreichbar'); }
+    if (r.status === 400 || r.status === 401 || r.status === 403 || r.status === 404) throw { kind: 'login' };
+    if (r.status === 429) throw new Error('Zu viele Versuche – bitte eine Minute warten');
+    if (!r.ok) throw new Error('Anmeldung fehlgeschlagen (' + r.status + ')');
+    const d = await r.json(), exp = tokenExp(d && d.token);
+    if (!d || !d.token || !exp) throw new Error('Server liefert keine gültige Anmeldung');
+    return { token: d.token, exp };
+  }
+
   root.PlannerCore = { buildICS, revNum, WT, FEIERTAGE, ALLGEMEIN, parts, parseDate, fmt, isoWeek, validate, deriveViews,
-    b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, expandRoot, diffRows };
+    b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, expandRoot, diffRows,
+    serverLoad, serverSave, serverLogin, tokenExp };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -3,6 +3,10 @@
 if (window.top !== window.self){ document.body.innerHTML = '<p style="padding:20px;font-family:sans-serif">Bitte direkt öffnen: <a href="' + location.href.replace(/"/g, '') + '" target="_top">Kinderplanung</a></p>'; throw new Error('Einbettung nicht erlaubt'); }
 let VAULT = null;
 const LS_KEY = 'kinderplanung_pin';
+/* Server für Lesen und Speichern (Phase 7); Adresse und Plan-Kennung stehen in index.html */
+const metaVal = n => { const m = document.querySelector(`meta[name="${n}"]`); return m ? m.content : ''; };
+const SERVER = metaVal('planer-server'), PLAN_ID = metaVal('planer-kennung');
+const sfetch = (u, o) => fetch(u, o);
 const MONATE = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const MON_KURZ = ['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const WDS = ['Mo','Di','Mi','Do','Fr','Sa','So'];
@@ -535,34 +539,32 @@ function downloadPdf(){
 
 
 /* ================= Laden & Bearbeiten (nur Hauptansicht) ================= */
-const OWN_KEY = 'kinderplanung_eigenstand', CACHE_KEY = 'kinderplanung_cache', DRAFT_KEY = 'kinderplanung_entwurf', TOKEN_KEY = 'kinderplanung_schreibzugang', TOKEN_EXP_KEY = 'kinderplanung_zugang_bis';
-/* Hinweis, wenn der Schreibzugang bald abläuft (N5) */
+// TOKEN_KEY: GitHub-Zugang nur noch für die Kalender-Gists (K1). AUTH_KEY: Anmeldung am Server (S2, 90 Tage).
+// OWN_KEY wird nicht mehr benutzt (15-Minuten-Regel entfällt), aber beim vollständigen Abmelden noch gelöscht.
+const OWN_KEY = 'kinderplanung_eigenstand', CACHE_KEY = 'kinderplanung_cache', DRAFT_KEY = 'kinderplanung_entwurf', TOKEN_KEY = 'kinderplanung_schreibzugang', TOKEN_EXP_KEY = 'kinderplanung_zugang_bis', AUTH_KEY = 'kinderplanung_anmeldung';
+/* Hinweis, wenn der Kalender-Zugang bald abläuft (N5) */
 function tokenWarning(){
   const exp = store.get(TOKEN_EXP_KEY);
   if (!exp || !store.get(TOKEN_KEY)) return '';
   const days = Math.round((new Date(exp) - new Date()) / 864e5);
   if (days > 30) return '';
-  return days < 0 ? 'Der Schreibzugang auf diesem Gerät ist abgelaufen – bitte bei GitHub neu erzeugen.'
-                  : `Der Schreibzugang auf diesem Gerät läuft in ${days} Tagen ab – bitte rechtzeitig bei GitHub verlängern („Regenerate token“).`;
+  return days < 0 ? 'Der Kalender-Zugang auf diesem Gerät ist abgelaufen – bitte bei GitHub neu erzeugen.'
+                  : `Der Kalender-Zugang auf diesem Gerät läuft in ${days} Tagen ab – bitte rechtzeitig bei GitHub verlängern („Regenerate token“).`;
+}
+/* Anmeldung am Server: gültig, solange noch mindestens eine Minute übrig ist */
+function getAuth(){
+  try { const a = JSON.parse(store.get(AUTH_KEY) || 'null'); return a && a.token && a.exp > Date.now() + 60e3 ? a : null; } catch(e){ return null; }
 }
 let OFFLINE = false;
 async function loadVault(){
   let cached = null;
   try { cached = JSON.parse(store.get(CACHE_KEY) || 'null'); } catch(e){}
   let v;
-  try {
-    const r = await fetch('data.json?ts=' + Date.now(), { cache:'no-store' });
-    if (!r.ok) throw new Error('data.json ' + r.status);
-    v = await r.json();
-  } catch(e){
-    if (cached && cached.blobs){ OFFLINE = true; return cached; }   // ohne Netz: zuletzt geladenen Stand verwenden
+  try { v = await PlannerCore.serverLoad(sfetch, SERVER, PLAN_ID); }
+  catch(e){
+    if (cached && cached.blobs){ OFFLINE = true; return cached; }   // ohne Server: zuletzt geladenen Stand verwenden
     throw e;
   }
-  // eigener, gerade veröffentlichter Stand kann kurz neuer sein als die (noch nicht aktualisierte) Webseite.
-  // P1: nur dann, wenn er von diesem Gerät stammt, höchstens 15 Minuten alt ist und dieselbe Verschlüsselung hat
-  let own = null; try { own = JSON.parse(store.get(OWN_KEY) || 'null'); } catch(e){}
-  const ownFresh = own && cached && own.rev === PlannerCore.revNum(cached) && Date.now() - own.ts < 15 * 60e3;
-  if (cached && cached.blobs && ownFresh && cached.salt === v.salt && PlannerCore.revNum(cached) > PlannerCore.revNum(v)) v = cached;
   store.set(JSON.stringify(v), CACHE_KEY);
   return v;
 }
@@ -629,6 +631,7 @@ function editAction(a){
   else if (a === 'close') closeDetail();
   else if (a === 'publish') openPublishSheet();
   else if (a === 'token') openTokenSheet(false);
+  else if (a === 'login') openLoginSheet(CHG.size > 0);
   else if (a === 'reload') location.reload();
 }
 
@@ -721,7 +724,7 @@ function openPublishSheet(){
         <label><input type="checkbox" id="s_${id}" ${l ? 'checked' : ''}> ${esc(NM.k4)}</label>
         ${KINDER[0] ? `<label><input type="checkbox" id="a_${id}" ${l ? 'checked' : ''}> ${esc(KINDER[0])}</label>` : ''}</div>
       ${hint ? `<p class="small">${hint}</p>` : ''}</div>`;
-  $('sheetcard').innerHTML = `<h3>Veröffentlichen</h3><div class="sub">Das ändert sich – danach sehen es alle nach etwa einer Minute.</div>
+  $('sheetcard').innerHTML = `<h3>Veröffentlichen</h3><div class="sub">Das ändert sich – danach sehen es alle, sobald sie die Seite neu laden.</div>
     ${block('amj', 'Kinder von ' + NM.p1, c.amj, true, false, true, '')}
     ${block('k4', NM.k4, c.k4, false, true, true, '')}
     ${block('other', 'Anlässe und Notizen', c.other, false, false, false, 'Notizen sehen nur ihr. Anlässe erscheinen bei den anderen nur, wenn sie für sie gedacht sind (z. B. Feiertage, Geburtstage).')}
@@ -740,62 +743,46 @@ function openPublishSheet(){
     text: $('t_' + g).value.trim(), wer: 'I' + ($('d_' + g).checked ? 'D' : '') + ($('m_' + g).checked ? 'M' : '') + ($('l_' + g) && $('l_' + g).checked ? 'L' : '') + ($('s_' + g) && $('s_' + g).checked ? 'S' : '') + ($('a_' + g) && $('a_' + g).checked ? 'A' : '') })).filter(x => x.text));
 }
 
-/* --- Speichern bei GitHub --- */
+/* --- Speichern auf dem Server (Phase 7) --- */
 const ghHeaders = token => ({ Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' });
 
-/* Speichert neue Stammdaten als data.json bei GitHub. Wirft {kind:'token'|'conflict'} oder Error. */
+/* Speichert neue Stammdaten auf dem Server. Wirft {kind:'auth'|'conflict'} oder Error.
+   Der Server nimmt nur an, wenn dort noch genau der Stand liegt, auf dem bearbeitet wurde (VAULT.rev).
+   Kalender: nur mit Kalender-Zugang auf diesem Gerät; sonst feedSkipped (K1). */
 async function commitMaster(master, message){
-  const token = store.get(TOKEN_KEY);
-  if (!token) throw { kind:'token' };
-  const h = ghHeaders(token), api = `https://api.github.com/repos/${PUB.repo}/contents/data.json`;
-  const cur = await fetch(api + '?ref=main&ts=' + Date.now(), { headers: h, cache: 'no-store' });
-  if (cur.status === 401 || cur.status === 403 || cur.status === 404) throw { kind:'token' };
-  if (!cur.ok) throw new Error('GitHub antwortet nicht (' + cur.status + ')');
-  const meta = await cur.json();
-  let remote;
-  if (meta.content) remote = JSON.parse(atob(String(meta.content).replace(/\s/g, '')));
-  else {                                              // Dateien > 1 MB: dieselbe Schnittstelle im Rohdaten-Format (immer aktuell, kein Zwischenspeicher)
-    const raw = await fetch(api + '?ref=main&ts=' + Date.now(), { headers: { ...h, Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
-    if (raw.status === 401 || raw.status === 403 || raw.status === 404) throw { kind:'token' };
-    if (!raw.ok) throw new Error('GitHub antwortet nicht (' + raw.status + ')');
-    remote = await raw.json();
-  }
-  if (remote.rev !== VAULT.rev) throw { kind:'conflict' };   // nur exakt der Stand, auf dem bearbeitet wurde
-  // Verlauf je Tag: Unterschiede zum veröffentlichten Stand festhalten
+  const auth = getAuth();
+  if (!auth) throw { kind:'auth' };
+  // Verlauf je Tag: Unterschiede zum veröffentlichten Stand festhalten (Wer: wie bisher der Name der Hauptansicht, kein Kontoname)
   master.hist = [...(master.hist || []), ...PlannerCore.diffRows(PUB.rows, master.rows, todayDE(), PUB.names.ius)];
-  const vault = await PlannerCore.buildVault(master, ROOT.keys, VAULT.salt, VAULT.iter, PlannerCore.revNum(remote) + 1);
-  const put = await fetch(api, { method:'PUT', headers: { ...h, 'Content-Type':'application/json' },
-    body: JSON.stringify({ message, content: btoa(JSON.stringify(vault)), sha: meta.sha, branch:'main',
-      // neutrale Absenderangabe, damit keine private E-Mail-Adresse in der öffentlichen Historie landet
-      author: { name: PUB.repo.split('/')[0], email: PUB.repo.split('/')[0] + '@users.noreply.github.com' },
-      committer: { name: PUB.repo.split('/')[0], email: PUB.repo.split('/')[0] + '@users.noreply.github.com' } }) });
-  if (put.status === 409 || put.status === 422) throw { kind:'conflict' };
-  if (put.status === 401 || put.status === 403 || put.status === 404) throw { kind:'token' };
-  if (!put.ok) throw new Error('Speichern fehlgeschlagen (' + put.status + ')');
+  const oldRev = PlannerCore.revNum(VAULT);
+  const vault = await PlannerCore.buildVault(master, ROOT.keys, VAULT.salt, VAULT.iter, oldRev + 1);
+  try { await PlannerCore.serverSave(sfetch, SERVER, PLAN_ID, auth.token, oldRev, vault); }
+  catch(e){ if (e && e.kind === 'auth') store.del(AUTH_KEY); throw e; }
   // neuen Stand übernehmen, offenen Entwurf (falls vorhanden) auf den neuen Stand übertragen
   const pending = {}; CHG.forEach(i => { pending[DRAFT.rows[i].d] = DRAFT.rows[i]; });
-  VAULT = vault; store.set(JSON.stringify(vault), CACHE_KEY); store.set(JSON.stringify({ rev: vault.rev, ts: Date.now() }), OWN_KEY);
+  VAULT = vault; store.set(JSON.stringify(vault), CACHE_KEY);
   const vs = PlannerCore.deriveViews(master);
   ROOT = Object.assign(vs.ius, { master, keys: ROOT.keys });
   PUB = clone(master); DRAFT = clone(master);
   DRAFT.rows.forEach((r, i) => { if (pending[r.d]) DRAFT.rows[i] = clone(pending[r.d]); });
   applyDraft();
-  let feedError = null;                               // Kalender gleich mit aktualisieren; Fehler melden statt verschlucken
-  try { await syncFeeds(master, true); FEED_ERR = null; } catch(e){ feedError = e; FEED_ERR = e; }
-  return { vault, feedError };
+  let feedError = null, feedSkipped = false;          // Kalender gleich mit aktualisieren (nur mit Kalender-Zugang); Fehler melden statt verschlucken
+  try { feedSkipped = (await syncFeeds(master, true)) === 'none'; FEED_ERR = null; } catch(e){ feedError = e; FEED_ERR = e; }
+  return { vault, feedError, feedSkipped };
 }
 let FEED_ERR = null;
-const feedErrText = e => e && e.kind === 'gist' ? 'dem Schreibzugang fehlt das Recht „Gists: Read and write“'
-  : e && e.kind === 'token' ? 'der Schreibzugang ist ungültig oder abgelaufen' : 'GitHub war nicht erreichbar';
+const feedErrText = e => e && e.kind === 'gist' ? 'dem Kalender-Zugang fehlt das Recht „Gists: Read and write“'
+  : e && e.kind === 'token' ? 'der Kalender-Zugang ist ungültig oder abgelaufen' : 'GitHub war nicht erreichbar';
 function publishError(err, say){
-  if (err && err.kind === 'token') say(`Der Schreibzugang auf diesem Gerät fehlt, ist abgelaufen oder hat nicht die nötigen Rechte. <a href="#" data-act="token">Schreibzugang einrichten</a>`, 'err');
-  else if (err && err.kind === 'gist') say(`Für die Kalender-Links fehlt dem Schreibzugang das Recht „Gists: Read and write“ (bei GitHub im Token unter „Account permissions“ ergänzen).`, 'err');
+  if (err && err.kind === 'auth') say(`Zum Speichern bitte anmelden (die Anmeldung fehlt oder ist abgelaufen). <a href="#" data-act="login">Anmelden</a>`, 'err');
+  else if (err && err.kind === 'token') say(`Der Kalender-Zugang auf diesem Gerät fehlt, ist abgelaufen oder hat nicht die nötigen Rechte. <a href="#" data-act="token">Kalender-Zugang einrichten</a>`, 'err');
+  else if (err && err.kind === 'gist') say(`Für die Kalender-Links fehlt dem Kalender-Zugang das Recht „Gists: Read and write“ (bei GitHub im Token unter „Account permissions“ ergänzen).`, 'err');
   else if (err && err.kind === 'conflict') say(`Der Plan wurde inzwischen an anderer Stelle geändert. <a href="#" data-act="reload">Seite neu laden</a> – dein Entwurf wird dabei übernommen.`, 'err');
   else if (err && /^Daten fehlerhaft/.test(err.message || '')) say(esc(err.message), 'err');
   else say(esc(err && err.message || 'Unbekannter Fehler') + ' – bitte Internetverbindung prüfen und erneut versuchen.', 'err');
 }
 async function doPublish(entries){
-  if (!store.get(TOKEN_KEY)){ openTokenSheet(true); return; }
+  if (!getAuth()){ openLoginSheet(true); return; }
   const msg = $('pubmsg'), btn = $('dopub');
   const say = (t, cls) => { msg.className = 'msg ' + (cls || ''); msg.innerHTML = t; };
   btn.disabled = true; say('Speichere …');
@@ -812,7 +799,8 @@ async function doPublish(entries){
     seen = seen.map(x => { const i = String(x).indexOf('|'); return i > 0 ? x.slice(0, i) + '#' + shortHash(x.slice(i + 1)) : x; });
     master.changes.forEach(c => seen.includes(newsId(c)) || seen.push(newsId(c))); store.set(JSON.stringify(seen), seenKey);
     EDIT = false; SEL = null; NOTICE = '';
-    $('sheetcard').innerHTML = `<h3>Gespeichert ✓</h3><p>Die Änderungen sind veröffentlicht. Für ${esc(NM.p2)} und ${esc(NM.v3)} sind sie in etwa einer Minute sichtbar${PUB.feeds && !res.feedError ? ', in den abonnierten Kalendern je nach App nach einigen Stunden' : ''}.</p>
+    $('sheetcard').innerHTML = `<h3>Gespeichert ✓</h3><p>Die Änderungen sind veröffentlicht. Für ${esc(NM.p2)} und ${esc(NM.v3)} sind sie sofort sichtbar, sobald sie die Seite neu laden${PUB.feeds && !res.feedError && !res.feedSkipped ? ', in den abonnierten Kalendern je nach App nach einigen Stunden' : ''}.</p>
+      ${PUB.feeds && res.feedSkipped && !res.feedError ? `<p class="msg">Die abonnierten Kalender werden beim nächsten Öffnen durch ${esc(NM.p1 || 'das Gerät mit Kalender-Zugang')} aktualisiert.</p>` : ''}
       ${PUB.feeds && res.feedError ? `<p class="msg err">Die abonnierten Kalender konnten nicht aktualisiert werden: ${esc(feedErrText(res.feedError))}. Bitte später unter „📅 Kalender“ → „Kalender jetzt aktualisieren“ erneut versuchen.</p>` : ''}
       ${entries.some(e => e.wer.includes('D')) ? `<button class="btn" style="width:100%;margin-top:8px" data-sendpdf="v2">📄 Aktuelles PDF an ${esc(NM.p2)} schicken</button>` : ''}
       ${entries.some(e => e.wer.includes('M')) ? `<button class="btn" style="width:100%;margin-top:8px" data-sendpdf="v3">📄 Aktuelles PDF an ${esc(NM.v3)} schicken</button>` : ''}
@@ -856,6 +844,7 @@ async function newGist(view, vs){
 /* Q5: gerade angelegte Kalender wieder löschen, wenn das Speichern scheitert */
 async function dropGists(list){ for (const g of list) if (g && g.id) { try { await gistCall('/' + g.id, 'DELETE'); } catch(e){} } }
 async function setupFeeds(say){
+  if (!getAuth()){ publishError({ kind:'auth' }, say); return; }   // erst Anmeldung prüfen, dann Gists anlegen
   say('Richte Kalender-Links ein …');
   try {
     const vs = PlannerCore.deriveViews(PUB), feeds = {};
@@ -869,6 +858,7 @@ async function setupFeeds(say){
   } catch(err){ publishError(err, say); }
 }
 async function renewFeed(view, say){
+  if (!getAuth()){ publishError({ kind:'auth' }, say); return; }   // erst Anmeldung prüfen, dann Gists anlegen
   say('Erzeuge neuen Link …');
   try {
     const old = PUB.feeds[view];
@@ -882,6 +872,7 @@ async function renewFeed(view, say){
 const viewName = v => v === 'ius' ? NM.ius : v === 'v2' ? NM.p2 : v === 'v3' ? NM.v3 : v === 'v5' ? NM.k4 : v === 'v6' ? KINDER[0] : (NM.k5 || v);
 /* fehlenden Kalender-Link einer neuen Ansicht nachträglich anlegen */
 async function addFeed(view, say){
+  if (!getAuth()){ publishError({ kind:'auth' }, say); return; }   // erst Anmeldung prüfen, dann Gists anlegen
   say('Richte Kalender-Link ein …');
   try {
     const master = clone(PUB);
@@ -907,10 +898,10 @@ function openCal(note){
       <p class="small">Bitte den Link nicht weitergeben – wer ihn hat, kann die Termine sehen (ohne PIN).</p>`;
   } else if (!isRoot){
     h += `<p>Das Kalender-Abo ist für dich noch nicht eingerichtet.</p>
-      <p class="small">${NM.p1 ? esc(NM.p1) + ' muss es erst freischalten – sag ihm einfach Bescheid.' : 'Es muss erst freigeschaltet werden – bitte bei Ina & Sven melden.'} Danach findest du hier deinen persönlichen Link.</p>`;
+      <p class="small">${NM.p1 ? esc(NM.p1) + ' muss es erst freischalten – sag ihm einfach Bescheid.' : 'Es muss erst freigeschaltet werden – bitte kurz Bescheid geben.'} Danach findest du hier deinen persönlichen Link.</p>`;
   } else {
     h += `<p class="small">Noch keine Kalender-Links vorhanden. Beim Einrichten entstehen drei geheime Links – für euch, für ${esc(NM.p2)} und für ${esc(NM.v3)}. Jede Person sieht darin nur ihre eigene Ansicht.</p>
-      <p class="small">Voraussetzung: Schreibzugang auf diesem Gerät mit dem Recht „Gists: Read and write“.</p>
+      <p class="small">Voraussetzung: Kalender-Zugang auf diesem Gerät (GitHub, Recht „Gists: Read and write“) und Anmeldung zum Speichern.</p>
       <button class="btn pri" style="width:100%;padding:11px" id="calsetup">Kalender-Links einrichten</button>`;
   }
   if (isRoot && feeds){
@@ -936,7 +927,7 @@ function openCal(note){
   if ($('calsetup')) $('calsetup').onclick = () => store.get(TOKEN_KEY) ? setupFeeds(say) : openTokenSheet(false);
   const showState = async () => {
     if (!$('calstate')) return;
-    if (!store.get(TOKEN_KEY)){ $('calstate').textContent = 'Stand der Kalender nur mit Schreibzugang auf diesem Gerät prüfbar.'; return; }
+    if (!store.get(TOKEN_KEY)){ $('calstate').textContent = 'Stand der Kalender nur mit Kalender-Zugang auf diesem Gerät prüfbar.'; return; }
     try {
       const g = await gistCall('/' + feeds.ius.id, 'GET');
       const cur = feedIsCurrent(g && g.description);
@@ -950,24 +941,55 @@ function openCal(note){
   $('sheetcard').querySelectorAll('[data-caladd]').forEach(b => b.onclick = () => store.get(TOKEN_KEY) ? addFeed(b.dataset.caladd, say) : openTokenSheet(false));
 }
 
-/* --- Schreibzugang (einmal pro Gerät) --- */
+/* --- Anmeldung am Server (einmal pro Gerät, 90 Tage) --- */
+function openLoginSheet(thenPublish){
+  const a = getAuth();
+  $('sheetcard').innerHTML = `<h3>Anmelden zum Speichern</h3>
+    <p class="small">Einmal pro Gerät nötig, gilt 90 Tage. Mit deiner E-Mail-Adresse und deinem eigenen Passwort (aus dem Passwortmanager). Die PIN bleibt davon unberührt und wird nie an den Server geschickt.</p>
+    ${a ? `<p class="msg ok">Angemeldet bis ${esc(new Date(a.exp).toLocaleDateString('de-DE'))}.</p>` : ''}
+    <form id="loginform" autocomplete="on">
+      <input id="lg_mail" type="email" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="E-Mail-Adresse" required style="margin-bottom:8px">
+      <input id="lg_pw" type="password" autocomplete="current-password" placeholder="Passwort" required>
+      <div class="sheetbtns"><button class="btn pri" id="lg_go" type="submit">Anmelden</button><button class="btn" type="button" data-act="close">Abbrechen</button></div>
+    </form>
+    ${a ? '<p class="small"><a href="#" id="lg_out">Anmeldung auf diesem Gerät entfernen</a></p>' : ''}
+    <div class="msg" id="lgmsg"></div>`;
+  $('sheet').classList.remove('hidden');
+  if ($('lg_out')) $('lg_out').onclick = e => { e.preventDefault(); store.del(AUTH_KEY); $('lgmsg').className = 'msg ok'; $('lgmsg').textContent = 'Anmeldung entfernt.'; };
+  $('loginform').addEventListener('submit', async e => {
+    e.preventDefault();
+    const m = $('lgmsg'), btn = $('lg_go');
+    btn.disabled = true; m.className = 'msg'; m.textContent = 'Prüfe …';
+    try {
+      const res = await PlannerCore.serverLogin(sfetch, SERVER, $('lg_mail').value.trim(), $('lg_pw').value);
+      store.set(JSON.stringify(res), AUTH_KEY);
+      $('lg_pw').value = '';
+      m.className = 'msg ok'; m.textContent = 'Angemeldet ✓';
+      if (thenPublish && CHG.size) setTimeout(openPublishSheet, 600);
+    } catch(err){
+      m.className = 'msg err';
+      m.textContent = err && err.kind === 'login' ? 'E-Mail oder Passwort stimmt nicht.' : (err && err.message || 'Anmeldung fehlgeschlagen.');
+    } finally { btn.disabled = false; }
+  });
+}
+
+/* --- Kalender-Zugang (GitHub, nur Gists; vorerst nur auf einem Gerät) --- */
 function openTokenSheet(thenPublish){
   const has = !!store.get(TOKEN_KEY);
-  $('sheetcard').innerHTML = `<h3>Schreibzugang einrichten</h3>
-    <p class="small">Einmal pro Gerät nötig. Der Zugang wird nur auf diesem Gerät gespeichert und erlaubt nur, den Plan zu speichern.</p>
+  $('sheetcard').innerHTML = `<h3>Kalender-Zugang einrichten</h3>
+    <p class="small">Nur nötig auf dem Gerät, das die abonnierten Kalender aktualisiert. Zum Speichern des Plans braucht man ihn nicht. Der Zugang wird nur auf diesem Gerät gespeichert und darf nur die Kalender-Dateien (Gists) ändern.</p>
     <ol class="steps">
       <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Diesen Link öffnen</a> und bei GitHub anmelden.</li>
-      <li><b>Token name</b>: z. B. „Planer ${esc(navigator.platform || 'Gerät')}“. <b>Expiration</b>: „Custom“ und ein Datum in einem Jahr.</li>
-      <li><b>Repository access</b>: „Only select repositories“ → <b>${esc((PUB.repo || '').split('/')[1] || '')}</b> auswählen.</li>
-      <li><b>Permissions</b> → „Add permissions“ bzw. „Repository permissions“ → <b>Contents</b> auf „Read and write“.</li>
-      <li>Für die Kalender-Abos zusätzlich bei <b>Account permissions</b> → <b>Gists</b> auf „Read and write“.</li>
+      <li><b>Token name</b>: z. B. „Kalender ${esc(navigator.platform || 'Gerät')}“. <b>Expiration</b>: „Custom“ und ein Datum in einem Jahr.</li>
+      <li><b>Repository access</b>: „Public repositories (read-only)“ lassen – <b>kein</b> Repository auswählen.</li>
+      <li><b>Account permissions</b> → <b>Gists</b> auf „Read and write“. Sonst nichts.</li>
       <li>Ganz unten <b>Generate token</b> → den Code (beginnt mit „github_pat_“) kopieren und hier einfügen.</li>
     </ol>
     <input id="tok" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="github_pat_…">
     <label class="small" for="tokexp" style="display:block;margin-top:10px">Gültig bis (wie bei GitHub unter „Expiration“ eingestellt) – die Seite erinnert rechtzeitig:</label>
     <input id="tokexp" type="date" value="${esc(store.get(TOKEN_EXP_KEY) || '')}" style="font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:10px">
     <div class="sheetbtns"><button class="btn pri" id="savetok">Prüfen und speichern</button><button class="btn" data-act="close">Abbrechen</button></div>
-    ${has ? '<p class="small"><a href="#" id="deltok">Schreibzugang auf diesem Gerät entfernen</a></p>' : ''}
+    ${has ? '<p class="small"><a href="#" id="deltok">Kalender-Zugang auf diesem Gerät entfernen</a></p>' : ''}
     <div class="msg" id="tokmsg"></div>`;
   $('sheet').classList.remove('hidden');
   if ($('deltok')) $('deltok').onclick = e => { e.preventDefault(); store.del(TOKEN_KEY); store.del(TOKEN_EXP_KEY); $('tokmsg').className = 'msg ok'; $('tokmsg').textContent = 'Entfernt.'; };
@@ -976,8 +998,15 @@ function openTokenSheet(thenPublish){
     if (!/^(github_pat_|ghp_)[A-Za-z0-9_]{20,}$/.test(tok)){ m.className = 'msg err'; m.textContent = 'Das sieht nicht wie ein GitHub-Zugangscode aus (beginnt mit „github_pat_“).'; return; }
     m.className = 'msg'; m.textContent = 'Prüfe …';
     try {
-      const r = await fetch(`https://api.github.com/repos/${PUB.repo}/contents/data.json?ref=main`, { headers: { Authorization: 'Bearer ' + tok, Accept: 'application/vnd.github+json' }, cache:'no-store' });
-      if (!r.ok){ m.className = 'msg err'; m.textContent = r.status === 404 ? 'Kein Zugriff auf den Speicher – ist „PatchworkPlanner“ ausgewählt?' : 'Code wurde nicht akzeptiert (' + r.status + ').'; return; }
+      // Prüft nur das Gist-Recht: vorhandenen Kalender unverändert zurückschreiben (Schreibprobe), sonst Gists auflisten
+      const F = PUB && PUB.feeds && PUB.feeds.ius;
+      let r;
+      if (F){
+        const g = await fetch('https://api.github.com/gists/' + F.id, { headers: ghHeaders(tok), cache:'no-store' });
+        r = g.ok ? await fetch('https://api.github.com/gists/' + F.id, { method:'PATCH', headers: { ...ghHeaders(tok), 'Content-Type':'application/json' }, cache:'no-store',
+          body: JSON.stringify({ description: (await g.json()).description || feedDesc() }) }) : g;
+      } else r = await fetch('https://api.github.com/gists?per_page=1', { headers: ghHeaders(tok), cache:'no-store' });
+      if (!r.ok){ m.className = 'msg err'; m.textContent = r.status === 401 ? 'Code wurde nicht akzeptiert (ungültig oder abgelaufen).' : r.status === 403 || r.status === 404 ? 'Dem Code fehlt das Recht „Gists: Read and write“.' : 'GitHub antwortet nicht (' + r.status + ').'; return; }
       store.set(tok, TOKEN_KEY);
       // Ablaufdatum: von GitHub, falls lesbar, sonst die Eingabe
       const hdr = r.headers.get('github-authentication-token-expiration');
@@ -985,7 +1014,7 @@ function openTokenSheet(thenPublish){
       if (hdr){ const dt = new Date(hdr.replace(' UTC', 'Z').replace(/^(\d{4}-\d\d-\d\d) /, '$1T').replace(/ ([+-]\d\d)(\d\d)$/, '$1:$2')); if (!isNaN(dt)) exp = dt.toISOString().slice(0,10); }   // Q3: robust
       if (exp) store.set(exp, TOKEN_EXP_KEY); else store.del(TOKEN_EXP_KEY);
       m.className = 'msg ok'; m.textContent = 'Gespeichert ✓';
-      if (thenPublish && CHG.size) setTimeout(openPublishSheet, 600);
+      if (ROOT && ROOT.master && ROOT.master.feeds) syncFeeds(PUB, false).then(() => { FEED_ERR = null; }).catch(e => { FEED_ERR = e; });
     } catch(e){ m.className = 'msg err'; m.textContent = 'Keine Verbindung zu GitHub.'; }
   };
 }
@@ -1180,13 +1209,14 @@ $('showpin').onclick = () => { const p = $('pin'); p.type = p.type === 'password
 $('editbtn').onclick = () => { EDIT = !EDIT; SEL = null; SELSTEP = 0; if (EDIT) setTab('month'); render(ROOT, true); };
 function doLogout(full){
   store.del();
-  if (full) [TOKEN_KEY, TOKEN_EXP_KEY, DRAFT_KEY, OWN_KEY].forEach(k => store.del(k));   // Q6: auf Wunsch alles vom Gerät entfernen
+  if (full) [TOKEN_KEY, TOKEN_EXP_KEY, AUTH_KEY, DRAFT_KEY, OWN_KEY].forEach(k => store.del(k));   // Q6: auf Wunsch alles vom Gerät entfernen (auch Server-Anmeldung)
   closeDetail(); V = null; ROOT = null; EDIT = false; $('editbar').classList.add('hidden'); document.body.classList.remove('withbar'); ['grid','month','year','newsbox'].forEach(x => $(x).innerHTML = ''); $('pin').value = '';
-  $('app').classList.add('hidden'); $('lock').classList.remove('hidden'); $('lockmsg').textContent = full ? 'Abgemeldet – Schreibzugang und Entwurf wurden von diesem Gerät entfernt.' : '';
+  $('app').classList.add('hidden'); $('lock').classList.remove('hidden'); $('lockmsg').textContent = full ? 'Abgemeldet – Anmeldung, Kalender-Zugang und Entwurf wurden von diesem Gerät entfernt.' : '';
 }
 $('logout').onclick = () => {
-  if (!store.get(TOKEN_KEY) && !store.get(DRAFT_KEY)) { doLogout(false); return; }
-  $('sheetcard').innerHTML = `<h3>Abmelden</h3><p class="small">Auf diesem Gerät sind noch ${store.get(TOKEN_KEY) ? 'der Schreibzugang' : ''}${store.get(TOKEN_KEY) && store.get(DRAFT_KEY) ? ' und ' : ''}${store.get(DRAFT_KEY) ? 'ein nicht veröffentlichter Entwurf' : ''} gespeichert. Auf dem eigenen Handy kann das bleiben – auf fremden oder geteilten Geräten bitte mit entfernen.</p>
+  const items = [store.get(AUTH_KEY) && 'die Anmeldung zum Speichern', store.get(TOKEN_KEY) && 'der Kalender-Zugang', store.get(DRAFT_KEY) && 'ein nicht veröffentlichter Entwurf'].filter(Boolean);
+  if (!items.length) { doLogout(false); return; }
+  $('sheetcard').innerHTML = `<h3>Abmelden</h3><p class="small">Auf diesem Gerät sind noch ${items.length > 1 ? items.slice(0, -1).join(', ') + ' und ' + items[items.length - 1] : items[0]} gespeichert. Auf dem eigenen Handy kann das bleiben – auf fremden oder geteilten Geräten bitte mit entfernen.</p>
     <div class="sheetbtns" style="flex-direction:column"><button class="btn" id="lo_only">Nur abmelden</button><button class="btn pri" id="lo_full">Abmelden und alles von diesem Gerät entfernen</button><button class="btn" data-act="close">Abbrechen</button></div>`;
   $('sheet').classList.remove('hidden');
   $('lo_only').onclick = () => doLogout(false); $('lo_full').onclick = () => doLogout(true);

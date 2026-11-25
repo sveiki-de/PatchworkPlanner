@@ -2,9 +2,11 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.github.com; manifest-src 'self'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.github.com https://planer.sveiki.de; manifest-src 'self'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<meta name="planer-server" content="https://planer.sveiki.de">
+<meta name="planer-kennung" content="echt">
 <title>Kinderplanung</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="icon" type="image/png" sizes="180x180" href="apple-touch-icon.png">
@@ -203,7 +205,7 @@ body.withbar main{padding-bottom:170px}
 .opt button{border:0;background:transparent;padding:8px 12px;border-radius:8px;font-weight:600;color:var(--muted);font-size:14px}
 .opt button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .mixed{font-size:12px;color:#a35400;margin-left:6px}
-.ef input[type=text],.ef input[type=date],.ef textarea,.pubbox textarea,#tok{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fcfbf8}
+.ef input[type=text],.ef input[type=date],.ef textarea,.pubbox textarea,#tok,#lg_mail,#lg_pw{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fcfbf8}
 .ef textarea,.pubbox textarea{min-height:64px;resize:vertical}
 .ef label.l{display:block;font-weight:600;margin:12px 0 4px}
 .quick{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px}
