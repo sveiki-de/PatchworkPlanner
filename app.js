@@ -1216,7 +1216,7 @@ function doLogout(full){
 $('logout').onclick = () => {
   const items = [store.get(AUTH_KEY) && 'die Anmeldung zum Speichern', store.get(TOKEN_KEY) && 'der Kalender-Zugang', store.get(DRAFT_KEY) && 'ein nicht veröffentlichter Entwurf'].filter(Boolean);
   if (!items.length) { doLogout(false); return; }
-  $('sheetcard').innerHTML = `<h3>Abmelden</h3><p class="small">Auf diesem Gerät sind noch ${items.length > 1 ? items.slice(0, -1).join(', ') + ' und ' + items[items.length - 1] : items[0]} gespeichert. Auf dem eigenen Handy kann das bleiben – auf fremden oder geteilten Geräten bitte mit entfernen.</p>
+  $('sheetcard').innerHTML = `<h3>Abmelden</h3><p class="small">Auf diesem Gerät ist noch gespeichert: ${items.length > 1 ? items.slice(0, -1).join(', ') + ' und ' + items[items.length - 1] : items[0]}.</p><p class="small">Auf deinem eigenen Handy kannst du das lassen. Auf fremden oder geteilten Geräten bitte „Abmelden und alles von diesem Gerät entfernen“ wählen.</p>
     <div class="sheetbtns" style="flex-direction:column"><button class="btn" id="lo_only">Nur abmelden</button><button class="btn pri" id="lo_full">Abmelden und alles von diesem Gerät entfernen</button><button class="btn" data-act="close">Abbrechen</button></div>`;
   $('sheet').classList.remove('hidden');
   $('lo_only').onclick = () => doLogout(false); $('lo_full').onclick = () => doLogout(true);
