@@ -171,6 +171,7 @@ function icons(d){
   let s = '';
   if (/Geburtstag/.test(d.a)) s += '🎂';
   if (PlannerCore.parts(d.a).some(isTermin)) s += '📌';
+  if (d.r) s += '✈️';
   if (d.u && d.u.some(u => u[2] !== 'visit')) s += '🚗';
   else if (d.u) s += '👋';
   return s;
@@ -305,6 +306,7 @@ function openDetail(i){
     <div class="sub">KW ${d.kw}${d.f ? ' · Schulferien' : ''}${d.h ? ' · Feiertag' : ''}</div>
     <div class="kv">${detailRows(V, d).map(([k,val]) => `<span class="k">${esc(k)}</span><span>${esc(val)}</span>`).join('')}</div>
     ${d.u ? `<div class="kv">${d.u.map(u => `<span class="k">${u[0] ? esc(u[0]) : 'Übergabe'}</span><span>${esc(u[1])}</span>`).join('')}</div>` : ''}
+    ${d.r ? `<div class="kv">${d.r.map(r => `<span class="k">✈️ ${esc(r[0])}</span><span>${esc(r[1])}</span>`).join('')}</div>` : ''}
     ${d.a ? `<div class="kv"><span class="k">Anlass</span><span>${esc(d.a)}</span></div>` : ''}
     ${d.c ? `<div class="note">${esc(d.c)}</div>` : ''}
     ${histBlock(d)}
@@ -914,6 +916,12 @@ function openCal(note){
       <p class="small" id="calstate">Prüfe Stand der Kalender …</p>
       <button class="btn" style="width:100%;margin-top:8px" id="calsync">Kalender jetzt aktualisieren</button>`;
   }
+  if (isRoot){
+    const R = ROOT.master.reise;
+    h += `<h4 style="margin:18px 0 6px">Dienstreisen per Mail</h4>` + (R && R.pub
+      ? `<p class="small">Eingerichtet. Neue Reisen werden beim Öffnen übernommen (nur mit dem dafür freigegebenen Konto). Öffentlicher Schlüssel für die Einrichtung:</p>${copyRow(JSON.stringify(R.pub), 'reise')}`
+      : `<p class="small">Noch nicht eingerichtet. Beim Einrichten entsteht ein Schlüsselpaar; der private Teil bleibt verschlüsselt im Plan.</p><button class="btn" style="width:100%" id="reisesetup">Dienstreisen einrichten</button>`);
+  }
   h += `<button id="closesheet">Schließen</button><div class="msg" id="calmsg"></div>`;
   $('sheetcard').innerHTML = h;
   $('sheet').classList.remove('hidden');
@@ -924,6 +932,7 @@ function openCal(note){
     try { await navigator.clipboard.writeText(inp.value); } catch(e){ inp.select(); try { document.execCommand('copy'); } catch(e2){} }
     b.textContent = 'Kopiert ✓'; setTimeout(() => b.textContent = 'Kopieren', 1800);
   });
+  if ($('reisesetup')) $('reisesetup').onclick = () => setupReise(say);
   if ($('calsetup')) $('calsetup').onclick = () => store.get(TOKEN_KEY) ? setupFeeds(say) : openTokenSheet(false);
   const showState = async () => {
     if (!$('calstate')) return;
@@ -939,6 +948,51 @@ function openCal(note){
   if ($('calsync')) $('calsync').onclick = async () => { say('Aktualisiere …'); try { await syncFeeds(PUB, true); FEED_ERR = null; say('Kalender aktualisiert ✓', 'ok'); showState(); } catch(err){ FEED_ERR = err; publishError(err, say); } };
   $('sheetcard').querySelectorAll('[data-renew]').forEach(b => b.onclick = () => renewFeed(b.dataset.renew, say));
   $('sheetcard').querySelectorAll('[data-caladd]').forEach(b => b.onclick = () => store.get(TOKEN_KEY) ? addFeed(b.dataset.caladd, say) : openTokenSheet(false));
+}
+
+/* ================= Dienstreisen per Mail (nur Hauptansicht, Bauplan_Dienstreisen.md) =================
+   Der Server hält nur verschlüsselte Einträge; nur das freigegebene Konto darf sie abholen (sonst 403).
+   Eingearbeitet wird automatisch und ohne „Was ist neu?“-Eintrag. */
+async function setupReise(say){
+  if (!getAuth()){ publishError({ kind:'auth' }, say); return; }
+  say('Erzeuge Schlüssel …');
+  try {
+    const k = await crypto.subtle.generateKey({ name:'RSA-OAEP', modulusLength:3072, publicExponent:new Uint8Array([1,0,1]), hash:'SHA-256' }, true, ['encrypt','decrypt']);
+    const master = clone(PUB);
+    master.reise = { priv: await crypto.subtle.exportKey('jwk', k.privateKey), pub: await crypto.subtle.exportKey('jwk', k.publicKey) };
+    await commitMaster(master, 'Dienstreisen eingerichtet');
+    render(ROOT, true); openCal('Dienstreisen eingerichtet ✓ Den öffentlichen Schlüssel unten kopieren und für die Einrichtung weitergeben.');
+  } catch(err){ publishError(err, say); }
+}
+async function reiseEntschluesseln(priv, blob){
+  const b = JSON.parse(blob);
+  const raw = await crypto.subtle.decrypt({ name:'RSA-OAEP' }, priv, fromB64(b.k));
+  const aes = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name:'AES-GCM', iv: fromB64(b.iv) }, aes, fromB64(b.ct))));
+}
+let REISE_LAEUFT = false;
+async function holeReisen(){
+  const auth = getAuth(), R = ROOT && ROOT.master && ROOT.master.reise;
+  if (REISE_LAEUFT || OFFLINE || !auth || !R || !R.priv) return;
+  REISE_LAEUFT = true;
+  try {
+    const r = await sfetch(SERVER + '/api/planer/reise', { headers: { Authorization: auth.token }, cache:'no-store' });
+    if (!r.ok) return;                                   // z. B. 403: dieses Konto holt nicht ab
+    const liste = await r.json();
+    if (!Array.isArray(liste) || !liste.length) return;
+    const priv = await crypto.subtle.importKey('jwk', R.priv, { name:'RSA-OAEP', hash:'SHA-256' }, false, ['decrypt']);
+    let reisen = PUB.reisen || [];
+    for (const x of liste){ try { reisen = PlannerCore.reiseEinarbeiten(reisen, await reiseEntschluesseln(priv, x.blob)); } catch(e){} }   // Unlesbares wird verworfen
+    if (JSON.stringify(reisen) !== JSON.stringify(PUB.reisen || [])){
+      const warRoot = V === ROOT, master = clone(PUB);
+      master.reisen = reisen;
+      await commitMaster(master, 'Dienstreisen eingetragen');
+      if (warRoot) render(ROOT, true);
+      toast('Dienstreisen aktualisiert ✈️');
+    }
+    await sfetch(SERVER + '/api/planer/reise/quittung', { method:'POST', headers: { Authorization: auth.token, 'Content-Type':'application/json' }, body: JSON.stringify({ ids: liste.map(x => x.id) }) });
+  } catch(e){ /* beim nächsten Öffnen erneut */ }
+  finally { REISE_LAEUFT = false; }
 }
 
 /* --- Anmeldung am Server (einmal pro Gerät, 90 Tage) --- */
@@ -966,6 +1020,7 @@ function openLoginSheet(thenPublish){
       $('lg_pw').value = '';
       m.className = 'msg ok'; m.textContent = 'Angemeldet ✓';
       if (thenPublish && CHG.size) setTimeout(openPublishSheet, 600);
+      else setTimeout(holeReisen, 600);
     } catch(err){
       m.className = 'msg err';
       m.textContent = err && err.kind === 'login' ? 'E-Mail oder Passwort stimmt nicht.' : (err && err.message || 'Anmeldung fehlgeschlagen.');
@@ -1224,6 +1279,7 @@ $('logout').onclick = () => {
 
 function start(v){
   ROOT = v; initEdit(v); render(ROOT); setTab('month');
+  if (ROOT.master) holeReisen();
   if (ROOT.master && ROOT.master.feeds) syncFeeds(PUB, false).then(() => { FEED_ERR = null; }).catch(e => { FEED_ERR = e; });
   const m = location.hash.match(/^#bearbeiten-(\d{8})-(\d{8})$/);       // Link aus einer Anfrage
   if (m && ROOT.master){

@@ -196,6 +196,12 @@
       const vl = (histByDay[day.d] || []).map(e => [e.t, e.by || '', histText(view, e)]).filter(x => x[2]).reverse();
       if (vl.length) day.vl = vl;
     });
+    // Dienstreisen: nur Hauptansicht (nie in v2–v6)
+    const R = master.reisen || [];
+    if (R.length) {
+      views.ius.reisen = R;
+      views.ius.days.forEach(day => { const rr = reisenAmTag(R, day.d.split('.').reverse().join('-')); if (rr.length) day.r = rr; });
+    }
     views.ius.others = { v2: views.v2, v3: views.v3, v4: views.v4, v5: views.v5, v6: views.v6 };
     return views;
   }
@@ -286,6 +292,13 @@
     } else {
       runs(d => d.s === 'M', () => `${N.k4} bei dir`, 'da');
     }
+    if (v.view === 'ius') (v.reisen || []).forEach(r => {
+      const tz = x => x.tag.replace(/-/g, '') + 'T' + x.uhr.replace(':', '') + '00';
+      out.push(['BEGIN:VEVENT', `UID:reise-${hash(r.uid)}@patchworkplanner`, `DTSTAMP:${stamp}`,
+        ...(r.von.ganz ? [`DTSTART;VALUE=DATE:${r.von.tag.replace(/-/g, '')}`, `DTEND;VALUE=DATE:${tagPlus(r.bis.tag, 1).replace(/-/g, '')}`]
+          : [`DTSTART;TZID=Europe/Berlin:${tz(r.von)}`, `DTEND;TZID=Europe/Berlin:${tz(r.bis.uhr ? r.bis : r.von)}`]),
+        `SUMMARY:${esc(r.titel)}`, 'END:VEVENT']);
+    });
     runs(d => !!d.f, () => 'Schulferien', 'ferien');
     // Anlässe (gleiche an Folgetagen zusammengefasst)
     const anl = [];
@@ -386,7 +399,66 @@
     return { token: d.token, exp };
   }
 
+  /* ---------- Dienstreisen per Mail (nur Hauptansicht, Bauplan_Dienstreisen.md) ---------- */
+  // Outlook schickt Windows-Zonennamen; die häufigsten auf IANA abbilden
+  const WINZONE = { 'W. Europe Standard Time': 'Europe/Berlin', 'Romance Standard Time': 'Europe/Paris', 'Central Europe Standard Time': 'Europe/Budapest',
+    'Central European Standard Time': 'Europe/Warsaw', 'GMT Standard Time': 'Europe/London', 'Greenwich Standard Time': 'Atlantic/Reykjavik', 'UTC': 'UTC',
+    'E. Europe Standard Time': 'Europe/Chisinau', 'FLE Standard Time': 'Europe/Helsinki', 'GTB Standard Time': 'Europe/Athens', 'Turkey Standard Time': 'Europe/Istanbul',
+    'Russian Standard Time': 'Europe/Moscow', 'Eastern Standard Time': 'America/New_York', 'Central Standard Time': 'America/Chicago', 'Pacific Standard Time': 'America/Los_Angeles',
+    'Arabian Standard Time': 'Asia/Dubai', 'India Standard Time': 'Asia/Kolkata', 'Singapore Standard Time': 'Asia/Singapore', 'China Standard Time': 'Asia/Shanghai', 'Tokyo Standard Time': 'Asia/Tokyo' };
+  const istZone = z => { try { new Intl.DateTimeFormat('en', { timeZone: z }); return true; } catch (e) { return false; } };
+  function zoneParts(ms, zone) {
+    const p = {}; new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+      .formatToParts(new Date(ms)).forEach(x => { p[x.type] = x.value; });
+    return p;
+  }
+  const zoneOffset = (ms, zone) => { const p = zoneParts(ms, zone); return (Date.UTC(+p.year, p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(ms / 60000) * 60000) / 60000; };
+  function wandzeitNachUtc(y, mo, d, h, mi, zone) {
+    const g = Date.UTC(y, mo - 1, d, h, mi); let t = g - zoneOffset(g, zone) * 60000;
+    const o2 = zoneOffset(t, zone); return g - o2 * 60000;
+  }
+  const tagPlus = (tag, n) => { const d = new Date(tag + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  // iCalendar-Zeit {wert, tz, nurDatum} → { tag: 'JJJJ-MM-TT', uhr?: 'HH:MM' (deutsche Zeit), ganz?, unsicher? }
+  function reiseZeit(z) {
+    const m = z && z.wert && /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})?(Z)?)?$/.exec(String(z.wert).trim());
+    if (!m) return null;
+    if (z.nurDatum || !m[4]) return { tag: `${m[1]}-${m[2]}-${m[3]}`, ganz: true };
+    let zone = m[7] ? 'UTC' : z.tz ? (WINZONE[z.tz] || (istZone(z.tz) ? z.tz : null)) : 'Europe/Berlin', unsicher = false;
+    if (!zone) { zone = 'Europe/Berlin'; unsicher = true; }
+    const p = zoneParts(wandzeitNachUtc(+m[1], +m[2], +m[3], +m[4], +m[5], zone), 'Europe/Berlin');
+    const r = { tag: `${p.year}-${p.month}-${p.day}`, uhr: `${p.hour}:${p.minute}` };
+    if (unsicher) r.unsicher = true;
+    return r;
+  }
+  /* Einen entschlüsselten Eingangs-Eintrag {methode, termine} in die Reiseliste einarbeiten.
+     Je Termin-Kennung zählt die höchste Sequenz; Absagen streichen den Termin. */
+  function reiseEinarbeiten(reisen, e) {
+    const out = (reisen || []).map(r => ({ ...r }));
+    for (const t of (e && e.termine) || []) {
+      if (!t || !t.uid) continue;
+      const seq = Number.isFinite(t.sequenz) ? t.sequenz : 0;
+      const i = out.findIndex(r => r.uid === t.uid);
+      if (i >= 0 && out[i].seq > seq) continue;
+      if (e.methode === 'CANCEL' || t.status === 'CANCELLED') { if (i >= 0) out.splice(i, 1); continue; }
+      const von = reiseZeit(t.beginn); if (!von) continue;
+      let bis = reiseZeit(t.ende) || von;
+      if (von.ganz && bis.ganz && bis.tag > von.tag) bis = { ...bis, tag: tagPlus(bis.tag, -1) };   // Ende bei Ganztägigem ist der Folgetag
+      if (bis.tag < von.tag) bis = von;
+      const r = { uid: String(t.uid).slice(0, 300), seq, titel: String(t.titel || 'Dienstreise').replace(/^\s*(Abgesagt|Abgesagt|Canceled|Cancelled|Aktualisiert|Updated)\s*:\s*/i, '').slice(0, 200) || 'Dienstreise', von, bis };
+      if (i >= 0) out[i] = r; else out.push(r);
+    }
+    return out.sort((a, b) => (a.von.tag + (a.von.uhr || '')).localeCompare(b.von.tag + (b.von.uhr || '')));
+  }
+  /* Reisen an einem Tag (JJJJ-MM-TT) als [Zeit, Titel] für die Anzeige */
+  function reisenAmTag(reisen, tag) {
+    return (reisen || []).filter(r => r.von.tag <= tag && r.bis.tag >= tag).map(r => {
+      const erster = r.von.tag === tag, letzter = r.bis.tag === tag;
+      const zeit = r.von.ganz ? 'ganztägig' : erster && letzter ? `${r.von.uhr}–${r.bis.uhr}` : erster ? `ab ${r.von.uhr}` : letzter ? `bis ${r.bis.uhr}` : 'ganztägig';
+      return [zeit, r.titel];
+    });
+  }
+
   root.PlannerCore = { buildICS, revNum, WT, FEIERTAGE, ALLGEMEIN, parts, parseDate, fmt, isoWeek, validate, deriveViews,
     b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, expandRoot, diffRows,
-    serverLoad, serverSave, serverLogin, tokenExp };
+    serverLoad, serverSave, serverLogin, tokenExp, reiseZeit, reiseEinarbeiten, reisenAmTag };
 })(typeof window !== 'undefined' ? window : globalThis);
