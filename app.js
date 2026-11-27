@@ -128,7 +128,8 @@ function seenSet(view){
 }
 function renderNews(v){
   $('newsbox').innerHTML = '<div id="newsA"></div><div id="tageA"></div>';
-  renderSystemNews(v); renderTage(v);
+  renderSystemNews(v);
+  if (v.view !== 'ius') renderTage(v);           // Hauptansicht: unter dem Kalender (renderMonth)
 }
 function renderSystemNews(v){
   const key = 'kinderplanung_gelesen_' + v.view, firstVisit = store.get(key) === null && store.get('kinderplanung_gesehen_' + v.view) === null;
@@ -157,6 +158,7 @@ function tageEintraege(v){
 }
 function tageGelesen(v){ store.set(JSON.stringify(tageEintraege(v).map(e => e.id)), tageKey(v.view)); }
 function renderTage(v){
+  const box = $(v.view === 'ius' ? 'tageUnten' : 'tageA'); if (!box) return;
   const raw = store.get(tageKey(v.view)), all = tageEintraege(v);
   let seen = new Set(); try { seen = new Set(JSON.parse(raw || '[]')); } catch(e){}
   if (raw === null){                                   // erster Besuch: nur die letzten 14 Tage zeigen
@@ -164,13 +166,13 @@ function renderTage(v){
     all.filter(e => deKey(e.t) < grenze).forEach(e => seen.add(e.id));
   }
   const fresh = all.filter(e => !seen.has(e.id));
-  if (!fresh.length){ $('tageA').innerHTML = ''; return; }
-  $('tageA').innerHTML = `<div class="news" id="tage"><h3>Geänderte Tage <span class="badge">${fresh.length}</span></h3>
+  if (!fresh.length){ box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="news" id="tage"${v.view === 'ius' ? ' style="margin-top:14px"' : ''}><h3>Geänderte Tage <span class="badge">${fresh.length}</span></h3>
     <ul>${fresh.map((e, n) => `<li class="${n >= 3 ? 'more' : ''}"><a href="#" data-tag="${e.i}">${esc(e.d.w)} ${esc(e.d.d)}</a>: ${esc(e.txt)} <small>(geändert ${esc(e.t)})</small></li>`).join('')}</ul>
     <div class="btns"><button class="btn pri" id="tageseen">Gelesen</button>${fresh.length > 3 ? `<button class="btn" id="moretage">${fresh.length - 3} weitere</button>` : ''}</div></div>`;
-  $('tageseen').onclick = () => { tageGelesen(v); $('tageA').innerHTML = ''; };
+  $('tageseen').onclick = () => { tageGelesen(v); box.innerHTML = ''; };
   if ($('moretage')) $('moretage').onclick = e => { $('tage').classList.add('open'); e.target.remove(); };
-  $('tageA').querySelectorAll('[data-tag]').forEach(a => a.onclick = e => { e.preventDefault(); openDetail(+a.dataset.tag); });
+  box.querySelectorAll('[data-tag]').forEach(a => a.onclick = e => { e.preventDefault(); openDetail(+a.dataset.tag); });
 }
 function showChanges(v){
   const all = (v.changes || []).slice().reverse();
@@ -238,7 +240,7 @@ function renderMonth(){
       ${v.view==='ius' || vk(v.view)==='v4' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')}</span><span><i class="sw" style="background:var(--kS)"></i>${NM.k4} da</span>` : ''}
       ${v.view==='v5' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')} = da</span>` : ''}</div>
     <div class="legend" style="margin-top:0">${ICONS_HELP}</div>`)}
-    ${v.view === 'ius' ? '' : `<div class="mlist">
+    ${v.view === 'ius' ? '<div id="tageUnten"></div>' : `<div class="mlist">
       <h3>${zeitTitel}</h3>
       ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}
       ${v.view === 'ius' || v.view === 'v3' || v.view === 'v5' || evs.length ? `<h3>${v.view === 'v5' ? 'Deine Fahrten' : 'Abholen & Bringen'}</h3>
@@ -248,6 +250,7 @@ function renderMonth(){
     </div>`}
     ${v.contact ? `<div style="text-align:center;margin-top:14px"><button class="btn pri" data-req="${g.from}">✉️ Änderung anfragen</button></div>` : ''}
     <p class="hint">Tippe auf einen Tag für Details · Wischen oder ‹ › für andere Monate</p>`;
+  if (v.view === 'ius') renderTage(v);
   $('prevm').onclick = () => go(-1); $('nextm').onclick = () => go(1);
   let sx = null;
   $('mgrid').addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, {passive:true});
