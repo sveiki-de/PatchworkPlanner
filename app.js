@@ -218,7 +218,7 @@ function renderMonth(){
     cells += `<div class="mc ${cls} ${d.f?'fe':''} ${d.h?'fei':''} ${d.d===todayStr?'today':''} ${editMark(idx)}" data-i="${idx}" title="${esc(d.a)}">
       <span class="n">${day}</span><span class="ic">${icons(d)}</span>${ks}</div>`;
   }
-  // Liste: Zeiten (nicht in der Hauptansicht, Entscheidung 27.11.2026 – dafür gibt es die Tabelle), Abholen & Bringen, Termine
+  // Listen unter dem Kalender: Zeiten, Abholen & Bringen, Termine – nicht in der Hauptansicht (Entscheidung 27.11.2026; dafür gibt es Tabelle und Tagesdetails)
   const runs = RUNS.filter(r => r.to >= g.from && r.from <= g.to);
   const evs = []; for (let i = g.from; i <= g.to; i++) (D[i].u || []).forEach(u => evs.push([i, u]));
   const terms = [];
@@ -238,14 +238,14 @@ function renderMonth(){
       ${v.view==='ius' || vk(v.view)==='v4' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')}</span><span><i class="sw" style="background:var(--kS)"></i>${NM.k4} da</span>` : ''}
       ${v.view==='v5' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')} = da</span>` : ''}</div>
     <div class="legend" style="margin-top:0">${ICONS_HELP}</div>`)}
-    <div class="mlist">
-      ${v.view === 'ius' ? '' : `<h3>${zeitTitel}</h3>
-      ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}`}
+    ${v.view === 'ius' ? '' : `<div class="mlist">
+      <h3>${zeitTitel}</h3>
+      ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}
       ${v.view === 'ius' || v.view === 'v3' || v.view === 'v5' || evs.length ? `<h3>${v.view === 'v5' ? 'Deine Fahrten' : 'Abholen & Bringen'}</h3>
       ${evs.length ? evs.map(([i,u]) => `<div class="li"><span><b>${D[i].w} ${kd(D[i])}</b>${u[0] ? ` <span class="t">${esc(u[0])}</span>` : ''} · ${esc(u[1])}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}` : ''}
       <h3>Termine & Feiertage</h3>
       ${terms.length ? terms.map(r => `<div class="li"><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">Keine.</div>'}
-    </div>
+    </div>`}
     ${v.contact ? `<div style="text-align:center;margin-top:14px"><button class="btn pri" data-req="${g.from}">✉️ Änderung anfragen</button></div>` : ''}
     <p class="hint">Tippe auf einen Tag für Details · Wischen oder ‹ › für andere Monate</p>`;
   $('prevm').onclick = () => go(-1); $('nextm').onclick = () => go(1);
