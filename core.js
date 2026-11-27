@@ -187,6 +187,7 @@
       }
       if (('f' in n || 'f' in o) && !!o.f !== !!n.f) out.push(n.f ? 'als Schulferien markiert' : 'Schulferien-Markierung entfernt');
       if (view === 'ius' && ('c' in n || 'c' in o) && (o.c || '') !== (n.c || '')) out.push('Notiz geändert');
+      if (view === 'ius' && e.r) out.push(String(e.r));                      // Dienstreisen: nur Hauptansicht
       if ((view === 'ius' || view === 'v2') && ('x' in n || 'x' in o) && (o.x || '') !== (n.x || '')) out.push('Abholen/Bringen angepasst');
       return out.join('; ');
     };
@@ -449,6 +450,21 @@
     }
     return out.sort((a, b) => (a.von.tag + (a.von.uhr || '')).localeCompare(b.von.tag + (b.von.uhr || '')));
   }
+  /* Verlaufseinträge für geänderte Reisen (nur Hauptansicht): neu, geändert, abgesagt */
+  function reiseVerlauf(alt, neu, t, by) {
+    const de = tag => tag.split('-').reverse().join('.');
+    const kurz = tag => de(tag).slice(0, 6);
+    const zeit = r => r.von.ganz ? (r.von.tag === r.bis.tag ? `${kurz(r.von.tag)} ganztägig` : `${kurz(r.von.tag)}–${kurz(r.bis.tag)} ganztägig`)
+      : r.von.tag === r.bis.tag ? `${kurz(r.von.tag)} ${r.von.uhr}–${r.bis.uhr}` : `${kurz(r.von.tag)} ${r.von.uhr} – ${kurz(r.bis.tag)} ${r.bis.uhr}`;
+    const A = {}, out = []; (alt || []).forEach(r => { A[r.uid] = r; });
+    (neu || []).forEach(r => {
+      const a = A[r.uid]; delete A[r.uid];
+      if (!a) out.push({ t, d: de(r.von.tag), by, r: `Dienstreise neu: „${r.titel}“ (${zeit(r)})` });
+      else if (JSON.stringify([a.titel, a.von, a.bis]) !== JSON.stringify([r.titel, r.von, r.bis])) out.push({ t, d: de(r.von.tag), by, r: `Dienstreise geändert: „${r.titel}“ (${zeit(r)})` });
+    });
+    Object.values(A).forEach(a => out.push({ t, d: de(a.von.tag), by, r: `Dienstreise abgesagt: „${a.titel}“` }));
+    return out;
+  }
   /* Reisen an einem Tag (JJJJ-MM-TT) als [Zeit, Titel] für die Anzeige */
   function reisenAmTag(reisen, tag) {
     return (reisen || []).filter(r => r.von.tag <= tag && r.bis.tag >= tag).map(r => {
@@ -460,5 +476,5 @@
 
   root.PlannerCore = { buildICS, revNum, WT, FEIERTAGE, ALLGEMEIN, parts, parseDate, fmt, isoWeek, validate, deriveViews,
     b64enc, b64dec, normPin, rawKeyFromPin, decryptVault, buildVault, expandRoot, diffRows,
-    serverLoad, serverSave, serverLogin, tokenExp, reiseZeit, reiseEinarbeiten, reisenAmTag };
+    serverLoad, serverSave, serverLogin, tokenExp, reiseZeit, reiseEinarbeiten, reisenAmTag, reiseVerlauf };
 })(typeof window !== 'undefined' ? window : globalThis);

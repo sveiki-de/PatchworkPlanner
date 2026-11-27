@@ -127,21 +127,50 @@ function seenSet(view){
   return set;
 }
 function renderNews(v){
+  $('newsbox').innerHTML = '<div id="newsA"></div><div id="tageA"></div>';
+  renderSystemNews(v); renderTage(v);
+}
+function renderSystemNews(v){
   const key = 'kinderplanung_gelesen_' + v.view, firstVisit = store.get(key) === null && store.get('kinderplanung_gesehen_' + v.view) === null;
   const seen = seenSet(v.view);
   const twoWeeksAgo = new Date(Date.now() - 14*864e5).toISOString().slice(0,10);
   const fresh = (v.changes || []).filter(c => !seen.has(newsId(c)) && (!firstVisit || c.iso >= twoWeeksAgo)).reverse();
-  if (!fresh.length){ $('newsbox').innerHTML = ''; return; }
-  $('newsbox').innerHTML = `<div class="news" id="news"><h3>Was ist neu? <span class="badge">${fresh.length}</span></h3>
+  if (!fresh.length){ $('newsA').innerHTML = ''; return; }
+  $('newsA').innerHTML = `<div class="news" id="news"><h3>Was ist neu? <span class="badge">${fresh.length}</span></h3>
     <ul>${fresh.map((c,i) => `<li class="${i >= 3 ? 'more' : ''}">${esc(c.text)} <small>(${esc(c.d)})</small></li>`).join('')}</ul>
     <div class="btns"><button class="btn pri" id="seen">Gelesen</button>${fresh.length > 3 ? `<button class="btn" id="morenews">${fresh.length - 3} weitere</button>` : ''}<button class="btn" id="allchanges">Alle Änderungen</button></div></div>`;
   $('seen').onclick = () => {
     (v.changes || []).forEach(c => seen.add(newsId(c)));             // alles bis jetzt gilt als gelesen
     store.set(JSON.stringify([...seen]), key); store.del('kinderplanung_gesehen_' + v.view);
-    $('newsbox').innerHTML = '';
+    $('newsA').innerHTML = '';
   };
   if ($('morenews')) $('morenews').onclick = e => { $('news').classList.add('open'); e.target.remove(); };
   $('allchanges').onclick = () => showChanges(v);
+}
+/* Geänderte Tage (inhaltliche Änderungen, je Ansicht nur was sie sieht) – getrennt von „Was ist neu?“ (System) */
+const tageKey = view => 'kinderplanung_tage_gelesen_' + view;
+const deKey = s => s.split('.').reverse().join('');
+function tageEintraege(v){
+  const out = [];
+  v.days.forEach((d, i) => (d.vl || []).forEach(([t, by, txt]) => out.push({ i, d, t, txt, id: shortHash(d.d + '|' + t + '|' + txt) })));
+  return out.sort((a, b) => deKey(b.t).localeCompare(deKey(a.t)) || deKey(a.d.d).localeCompare(deKey(b.d.d)));
+}
+function tageGelesen(v){ store.set(JSON.stringify(tageEintraege(v).map(e => e.id)), tageKey(v.view)); }
+function renderTage(v){
+  const raw = store.get(tageKey(v.view)), all = tageEintraege(v);
+  let seen = new Set(); try { seen = new Set(JSON.parse(raw || '[]')); } catch(e){}
+  if (raw === null){                                   // erster Besuch: nur die letzten 14 Tage zeigen
+    const t = new Date(Date.now() - 14*864e5), grenze = `${t.getFullYear()}${String(t.getMonth()+1).padStart(2,'0')}${String(t.getDate()).padStart(2,'0')}`;
+    all.filter(e => deKey(e.t) < grenze).forEach(e => seen.add(e.id));
+  }
+  const fresh = all.filter(e => !seen.has(e.id));
+  if (!fresh.length){ $('tageA').innerHTML = ''; return; }
+  $('tageA').innerHTML = `<div class="news" id="tage"><h3>Geänderte Tage <span class="badge">${fresh.length}</span></h3>
+    <ul>${fresh.map((e, n) => `<li class="${n >= 3 ? 'more' : ''}"><a href="#" data-tag="${e.i}">${esc(e.d.w)} ${esc(e.d.d)}</a>: ${esc(e.txt)} <small>(geändert ${esc(e.t)})</small></li>`).join('')}</ul>
+    <div class="btns"><button class="btn pri" id="tageseen">Gelesen</button>${fresh.length > 3 ? `<button class="btn" id="moretage">${fresh.length - 3} weitere</button>` : ''}</div></div>`;
+  $('tageseen').onclick = () => { tageGelesen(v); $('tageA').innerHTML = ''; };
+  if ($('moretage')) $('moretage').onclick = e => { $('tage').classList.add('open'); e.target.remove(); };
+  $('tageA').querySelectorAll('[data-tag]').forEach(a => a.onclick = e => { e.preventDefault(); openDetail(+a.dataset.tag); });
 }
 function showChanges(v){
   const all = (v.changes || []).slice().reverse();
@@ -189,7 +218,7 @@ function renderMonth(){
     cells += `<div class="mc ${cls} ${d.f?'fe':''} ${d.h?'fei':''} ${d.d===todayStr?'today':''} ${editMark(idx)}" data-i="${idx}" title="${esc(d.a)}">
       <span class="n">${day}</span><span class="ic">${icons(d)}</span>${ks}</div>`;
   }
-  // Liste: Zeiten, Abholen & Bringen, Termine
+  // Liste: Zeiten (nicht in der Hauptansicht, Entscheidung 27.11.2026 – dafür gibt es die Tabelle), Abholen & Bringen, Termine
   const runs = RUNS.filter(r => r.to >= g.from && r.from <= g.to);
   const evs = []; for (let i = g.from; i <= g.to; i++) (D[i].u || []).forEach(u => evs.push([i, u]));
   const terms = [];
@@ -210,8 +239,8 @@ function renderMonth(){
       ${v.view==='v5' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')} = da</span>` : ''}</div>
     <div class="legend" style="margin-top:0">${ICONS_HELP}</div>`)}
     <div class="mlist">
-      <h3>${zeitTitel}</h3>
-      ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}
+      ${v.view === 'ius' ? '' : `<h3>${zeitTitel}</h3>
+      ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}`}
       ${v.view === 'ius' || v.view === 'v3' || v.view === 'v5' || evs.length ? `<h3>${v.view === 'v5' ? 'Deine Fahrten' : 'Abholen & Bringen'}</h3>
       ${evs.length ? evs.map(([i,u]) => `<div class="li"><span><b>${D[i].w} ${kd(D[i])}</b>${u[0] ? ` <span class="t">${esc(u[0])}</span>` : ''} · ${esc(u[1])}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}` : ''}
       <h3>Termine & Feiertage</h3>
@@ -715,34 +744,15 @@ function describeChanges(){
 }
 function openPublishSheet(){
   const c = describeChanges();
-  const block = (id, title, lines, d, m, l, hint) => !lines.length ? '' : `<div class="pubbox">
-      <b>${title}</b><ul class="difflist">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul>
-      <label class="small" for="t_${id}">Text für „Was ist neu?“ (leer = kein Eintrag)</label>
-      <textarea id="t_${id}">${esc(lines.join('; ') + '.')}</textarea>
-      <div class="who2"><label><input type="checkbox" checked disabled> ${esc(NM.ius)}</label>
-        <label><input type="checkbox" id="d_${id}" ${d ? 'checked' : ''}> ${esc(NM.p2)}</label>
-        <label><input type="checkbox" id="m_${id}" ${m ? 'checked' : ''}> ${esc(NM.v3)}</label>
-        ${NM.k5 ? `<label><input type="checkbox" id="l_${id}" ${l ? 'checked' : ''}> ${esc(NM.k5)}</label>` : ''}
-        <label><input type="checkbox" id="s_${id}" ${l ? 'checked' : ''}> ${esc(NM.k4)}</label>
-        ${KINDER[0] ? `<label><input type="checkbox" id="a_${id}" ${l ? 'checked' : ''}> ${esc(KINDER[0])}</label>` : ''}</div>
-      ${hint ? `<p class="small">${hint}</p>` : ''}</div>`;
-  $('sheetcard').innerHTML = `<h3>Veröffentlichen</h3><div class="sub">Das ändert sich – danach sehen es alle, sobald sie die Seite neu laden.</div>
-    ${block('amj', 'Kinder von ' + NM.p1, c.amj, true, false, true, '')}
-    ${block('k4', NM.k4, c.k4, false, true, true, '')}
-    ${block('other', 'Anlässe und Notizen', c.other, false, false, false, 'Notizen sehen nur ihr. Anlässe erscheinen bei den anderen nur, wenn sie für sie gedacht sind (z. B. Feiertage, Geburtstage).')}
+  const block = (title, lines) => !lines.length ? '' : `<div class="pubbox"><b>${title}</b><ul class="difflist">${lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></div>`;
+  $('sheetcard').innerHTML = `<h3>Veröffentlichen</h3><div class="sub">Das ändert sich – danach sehen es alle, sobald sie die Seite neu laden. Jede Ansicht zeigt die Änderungen, die sie betreffen, unter „Geänderte Tage“.</div>
+    ${block('Kinder von ' + NM.p1, c.amj)}
+    ${block(NM.k4, c.k4)}
+    ${block('Anlässe und Notizen', c.other)}
     <div class="sheetbtns"><button class="btn pri" id="dopub">Jetzt veröffentlichen</button><button class="btn" data-act="close">Abbrechen</button></div>
     <div class="msg" id="pubmsg"></div>`;
   $('sheet').classList.remove('hidden');
-  ['d_other', 'm_other', 'l_other', 's_other', 'a_other'].forEach(id => $(id) && $(id).addEventListener('change', () => {
-    const on = ['d_other', 'm_other', 'l_other', 's_other', 'a_other'].some(x => $(x) && $(x).checked);
-    let w = $('warn_other');
-    if (on && !w){ w = document.createElement('p'); w.id = 'warn_other'; w.className = 'small'; w.style.color = '#a35400';
-      w.textContent = 'Achtung: Dieser Text nennt Anlässe/Notizen, die die angehakte Person sonst nicht sieht. Bitte prüfen und ggf. neutral formulieren.';
-      $('t_other').after(w); }
-    if (!on && w) w.remove();
-  }));
-  $('dopub').onclick = () => doPublish(['amj', 'k4', 'other'].filter(g => $('t_' + g)).map(g => ({
-    text: $('t_' + g).value.trim(), wer: 'I' + ($('d_' + g).checked ? 'D' : '') + ($('m_' + g).checked ? 'M' : '') + ($('l_' + g) && $('l_' + g).checked ? 'L' : '') + ($('s_' + g) && $('s_' + g).checked ? 'S' : '') + ($('a_' + g) && $('a_' + g).checked ? 'A' : '') })).filter(x => x.text));
+  $('dopub').onclick = () => doPublish([], { d: c.amj.length > 0, m: c.k4.length > 0 });
 }
 
 /* --- Speichern auf dem Server (Phase 7) --- */
@@ -783,7 +793,7 @@ function publishError(err, say){
   else if (err && /^Daten fehlerhaft/.test(err.message || '')) say(esc(err.message), 'err');
   else say(esc(err && err.message || 'Unbekannter Fehler') + ' – bitte Internetverbindung prüfen und erneut versuchen.', 'err');
 }
-async function doPublish(entries){
+async function doPublish(entries, pdf = {}){
   if (!getAuth()){ openLoginSheet(true); return; }
   const msg = $('pubmsg'), btn = $('dopub');
   const say = (t, cls) => { msg.className = 'msg ' + (cls || ''); msg.innerHTML = t; };
@@ -804,9 +814,10 @@ async function doPublish(entries){
     $('sheetcard').innerHTML = `<h3>Gespeichert ✓</h3><p>Die Änderungen sind veröffentlicht. Für ${esc(NM.p2)} und ${esc(NM.v3)} sind sie sofort sichtbar, sobald sie die Seite neu laden${PUB.feeds && !res.feedError && !res.feedSkipped ? ', in den abonnierten Kalendern je nach App nach einigen Stunden' : ''}.</p>
       ${PUB.feeds && res.feedSkipped && !res.feedError ? `<p class="msg">Die abonnierten Kalender werden beim nächsten Öffnen durch ${esc(NM.p1 || 'das Gerät mit Kalender-Zugang')} aktualisiert.</p>` : ''}
       ${PUB.feeds && res.feedError ? `<p class="msg err">Die abonnierten Kalender konnten nicht aktualisiert werden: ${esc(feedErrText(res.feedError))}. Bitte später unter „📅 Kalender“ → „Kalender jetzt aktualisieren“ erneut versuchen.</p>` : ''}
-      ${entries.some(e => e.wer.includes('D')) ? `<button class="btn" style="width:100%;margin-top:8px" data-sendpdf="v2">📄 Aktuelles PDF an ${esc(NM.p2)} schicken</button>` : ''}
-      ${entries.some(e => e.wer.includes('M')) ? `<button class="btn" style="width:100%;margin-top:8px" data-sendpdf="v3">📄 Aktuelles PDF an ${esc(NM.v3)} schicken</button>` : ''}
+      ${pdf.d || entries.some(e => e.wer.includes('D')) ? `<button class="btn" style="width:100%;margin-top:8px" data-sendpdf="v2">📄 Aktuelles PDF an ${esc(NM.p2)} schicken</button>` : ''}
+      ${pdf.m || entries.some(e => e.wer.includes('M')) ? `<button class="btn" style="width:100%;margin-top:8px" data-sendpdf="v3">📄 Aktuelles PDF an ${esc(NM.v3)} schicken</button>` : ''}
       <div class="sheetbtns"><button class="btn pri" data-act="close">Schließen</button></div>`;
+    tageGelesen(ROOT);                                 // eigene Änderungen gelten auf diesem Gerät als gelesen
     render(ROOT, true);
     $('sheetcard').querySelectorAll('[data-sendpdf]').forEach(b => b.onclick = () => sharePdf(ROOT.others[b.dataset.sendpdf]));
   } catch(err){
@@ -986,6 +997,7 @@ async function holeReisen(){
     if (JSON.stringify(reisen) !== JSON.stringify(PUB.reisen || [])){
       const warRoot = V === ROOT, master = clone(PUB);
       master.reisen = reisen;
+      master.hist = [...(master.hist || []), ...PlannerCore.reiseVerlauf(PUB.reisen || [], reisen, todayDE(), PUB.names.ius)];
       await commitMaster(master, 'Dienstreisen eingetragen');
       if (warRoot) render(ROOT, true);
       toast('Dienstreisen aktualisiert ✈️');
