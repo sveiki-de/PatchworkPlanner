@@ -128,8 +128,7 @@ function seenSet(view){
 }
 function renderNews(v){
   $('newsbox').innerHTML = '<div id="newsA"></div><div id="tageA"></div>';
-  renderSystemNews(v);
-  if (v.view !== 'ius') renderTage(v);           // Hauptansicht: unter dem Kalender (renderMonth)
+  renderSystemNews(v);                            // „Geänderte Tage“ steht unter dem Kalender (renderMonth)
 }
 function renderSystemNews(v){
   const key = 'kinderplanung_gelesen_' + v.view, firstVisit = store.get(key) === null && store.get('kinderplanung_gesehen_' + v.view) === null;
@@ -158,7 +157,7 @@ function tageEintraege(v){
 }
 function tageGelesen(v){ store.set(JSON.stringify(tageEintraege(v).map(e => e.id)), tageKey(v.view)); }
 function renderTage(v){
-  const box = $(v.view === 'ius' ? 'tageUnten' : 'tageA'); if (!box) return;
+  const box = $('tageUnten'); if (!box) return;
   const raw = store.get(tageKey(v.view)), all = tageEintraege(v);
   let seen = new Set(); try { seen = new Set(JSON.parse(raw || '[]')); } catch(e){}
   if (raw === null){                                   // erster Besuch: nur die letzten 14 Tage zeigen
@@ -167,7 +166,7 @@ function renderTage(v){
   }
   const fresh = all.filter(e => !seen.has(e.id));
   if (!fresh.length){ box.innerHTML = ''; return; }
-  box.innerHTML = `<div class="news" id="tage"${v.view === 'ius' ? ' style="margin-top:14px"' : ''}><h3>Geänderte Tage <span class="badge">${fresh.length}</span></h3>
+  box.innerHTML = `<div class="news" id="tage" style="margin-top:14px"><h3>Geänderte Tage <span class="badge">${fresh.length}</span></h3>
     <ul>${fresh.map((e, n) => `<li class="${n >= 3 ? 'more' : ''}"><a href="#" data-tag="${e.i}">${esc(e.d.w)} ${esc(e.d.d)}</a>: ${esc(e.txt)} <small>(geändert ${esc(e.t)})</small></li>`).join('')}</ul>
     <div class="btns"><button class="btn pri" id="tageseen">Gelesen</button>${fresh.length > 3 ? `<button class="btn" id="moretage">${fresh.length - 3} weitere</button>` : ''}</div></div>`;
   $('tageseen').onclick = () => { tageGelesen(v); box.innerHTML = ''; };
@@ -198,11 +197,12 @@ function monthsOf(v){
 }
 /* Termin/Anlass: alles außer Geburtstagen (eigenes Symbol) und gesetzlichen Feiertagen (rote Zahl) */
 const isTermin = x => !/Geburtstag/.test(x) && !PlannerCore.FEIERTAGE.includes(x) && x !== 'Ostern';
+const reiseZeichen = () => V && V.reiseIcon ? `<img src="${esc(V.reiseIcon)}" alt="Reise" style="height:1em;width:auto;vertical-align:-.12em">` : '✈️';
 function icons(d){
   let s = '';
   if (/Geburtstag/.test(d.a)) s += '🎂';
   if (PlannerCore.parts(d.a).some(isTermin)) s += '📌';
-  if (d.r) s += '✈️';
+  if (d.r) s += reiseZeichen();
   if (d.u && d.u.some(u => u[2] !== 'visit')) s += '🚗';
   else if (d.u) s += '👋';
   return s;
@@ -220,16 +220,7 @@ function renderMonth(){
     cells += `<div class="mc ${cls} ${d.f?'fe':''} ${d.h?'fei':''} ${d.d===todayStr?'today':''} ${editMark(idx)}" data-i="${idx}" title="${esc(d.a)}">
       <span class="n">${day}</span><span class="ic">${icons(d)}</span>${ks}</div>`;
   }
-  // Listen unter dem Kalender: Zeiten, Abholen & Bringen, Termine – nicht in der Hauptansicht (Entscheidung 27.11.2026; dafür gibt es Tabelle und Tagesdetails)
-  const runs = RUNS.filter(r => r.to >= g.from && r.from <= g.to);
-  const evs = []; for (let i = g.from; i <= g.to; i++) (D[i].u || []).forEach(u => evs.push([i, u]));
-  const terms = [];
-  for (let i = g.from; i <= g.to; i++) for (const part of (D[i].a || '').split(' · ').filter(Boolean)){
-    const r = terms.find(x => x.text === part && x.to === i-1); if (r) r.to = i; else terms.push({ text:part, from:i, to:i });
-  }
-  terms.sort((a,b) => a.from - b.from);
-  const zeitTitel = v.view === 'v3' ? (MODE === 'frei' ? 'Deine freien Tage' : `${NM.k4} bei dir`)
-    : v.view === 'v2' ? (MODE === 'da' ? 'Kinder bei dir' : 'Deine freien Tage') : vk(v.view) === 'v4' ? 'Wer ist wann wo' : v.view === 'v5' ? 'Wo bist du wann' : 'Wer ist wann da';
+  // Unter dem Kalender: nur „Geänderte Tage“ (Entscheidung 27./28.11.2026; Zeiten, Abholen & Bringen, Termine stehen in Tagesdetails und Tabelle)
   $('month').innerHTML = `
     <div class="mhead"><button id="prevm" aria-label="Vorheriger Monat" ${MI===0?'disabled':''}>‹</button>
       <h2>${MONATE[g.m]} ${g.y}</h2>
@@ -240,17 +231,10 @@ function renderMonth(){
       ${v.view==='ius' || vk(v.view)==='v4' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')}</span><span><i class="sw" style="background:var(--kS)"></i>${NM.k4} da</span>` : ''}
       ${v.view==='v5' ? `<span><i class="sw" style="background:var(--kA)"></i>${KINDER.map(k => k[0]).join(' ')} = da</span>` : ''}</div>
     <div class="legend" style="margin-top:0">${ICONS_HELP}</div>`)}
-    ${v.view === 'ius' ? '<div id="tageUnten"></div>' : `<div class="mlist">
-      <h3>${zeitTitel}</h3>
-      ${runs.length ? runs.map(r => `<div class="li"><i class="sw s-${r.cls}"></i><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}
-      ${v.view === 'ius' || v.view === 'v3' || v.view === 'v5' || evs.length ? `<h3>${v.view === 'v5' ? 'Deine Fahrten' : 'Abholen & Bringen'}</h3>
-      ${evs.length ? evs.map(([i,u]) => `<div class="li"><span><b>${D[i].w} ${kd(D[i])}</b>${u[0] ? ` <span class="t">${esc(u[0])}</span>` : ''} · ${esc(u[1])}</span></div>`).join('') : '<div class="empty">In diesem Monat nichts.</div>'}` : ''}
-      <h3>Termine & Feiertage</h3>
-      ${terms.length ? terms.map(r => `<div class="li"><span><b>${rng(D, r.from, r.to)}</b> · ${esc(r.text)}</span></div>`).join('') : '<div class="empty">Keine.</div>'}
-    </div>`}
+    <div id="tageUnten"></div>
     ${v.contact ? `<div style="text-align:center;margin-top:14px"><button class="btn pri" data-req="${g.from}">✉️ Änderung anfragen</button></div>` : ''}
     <p class="hint">Tippe auf einen Tag für Details · Wischen oder ‹ › für andere Monate</p>`;
-  if (v.view === 'ius') renderTage(v);
+  renderTage(v);
   $('prevm').onclick = () => go(-1); $('nextm').onclick = () => go(1);
   let sx = null;
   $('mgrid').addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, {passive:true});
@@ -338,7 +322,7 @@ function openDetail(i){
     <div class="sub">KW ${d.kw}${d.f ? ' · Schulferien' : ''}${d.h ? ' · Feiertag' : ''}</div>
     <div class="kv">${detailRows(V, d).map(([k,val]) => `<span class="k">${esc(k)}</span><span>${esc(val)}</span>`).join('')}</div>
     ${d.u ? `<div class="kv">${d.u.map(u => `<span class="k">${u[0] ? esc(u[0]) : 'Übergabe'}</span><span>${esc(u[1])}</span>`).join('')}</div>` : ''}
-    ${d.r ? `<div class="kv">${d.r.map(r => `<span class="k">✈️ ${esc(r[0])}</span><span>${esc(r[1])}</span>`).join('')}</div>` : ''}
+    ${d.r ? `<div class="kv">${d.r.map(r => `<span class="k">${reiseZeichen()} ${esc(r[0])}</span><span>${esc(r[1])}</span>`).join('')}</div>` : ''}
     ${d.a ? `<div class="kv"><span class="k">Anlass</span><span>${esc(d.a)}</span></div>` : ''}
     ${d.c ? `<div class="note">${esc(d.c)}</div>` : ''}
     ${histBlock(d)}
@@ -1003,7 +987,7 @@ async function holeReisen(){
       master.hist = [...(master.hist || []), ...PlannerCore.reiseVerlauf(PUB.reisen || [], reisen, todayDE(), PUB.names.ius)];
       await commitMaster(master, 'Dienstreisen eingetragen');
       if (warRoot) render(ROOT, true);
-      toast('Dienstreisen aktualisiert ✈️');
+      toast('Dienstreisen aktualisiert');
     }
     await sfetch(SERVER + '/api/planer/reise/quittung', { method:'POST', headers: { Authorization: auth.token, 'Content-Type':'application/json' }, body: JSON.stringify({ ids: liste.map(x => x.id) }) });
   } catch(e){ /* beim nächsten Öffnen erneut */ }

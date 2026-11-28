@@ -201,6 +201,8 @@
     const R = master.reisen || [];
     if (R.length) {
       views.ius.reisen = R;
+      const ic = master.reise && master.reise.icon;                            // eigenes Reise-Zeichen (liegt nur verschlüsselt im Plan)
+      if (typeof ic === 'string' && /^data:image\/(svg\+xml|png);base64,[A-Za-z0-9+/=]+$/.test(ic) && ic.length < 40000) views.ius.reiseIcon = ic;
       views.ius.days.forEach(day => { const rr = reisenAmTag(R, day.d.split('.').reverse().join('-')); if (rr.length) day.r = rr; });
     }
     views.ius.others = { v2: views.v2, v3: views.v3, v4: views.v4, v5: views.v5, v6: views.v6 };
